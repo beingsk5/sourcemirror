@@ -75,8 +75,9 @@ function renderFileCard(name) {
     <div class="space-y-1 text-sm">
       <div class="text-blue-400">● Validating</div>
       <div class="text-zinc-500">○ Downloading</div>
-      <div class="text-zinc-500">○ Uploading to SourceForge</div>
+      <div class="text-zinc-500">○ Uploading to Mirror</div>
       <div class="text-zinc-500">○ Verifying</div>
+      <div class="text-zinc-500">○ Finished</div>
     </div>
   `;
 
@@ -137,7 +138,8 @@ function updateStage(stage) {
     validating: 0,
     downloading: 1,
     uploading: 2,
-    verifying: 3
+    verifying: 3,
+    finished: 4
   };
 
   const index = map[stage];
