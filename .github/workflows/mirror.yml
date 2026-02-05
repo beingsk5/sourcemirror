@@ -1,0 +1,29 @@
+name: Public SourceForge Mirror
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "One URL per line"
+        required: true
+        type: string
+      job_id:
+        description: "Public job id"
+        required: true
+        type: string
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare
+        run: |
+          echo "JOB_ID=${{ inputs.job_id }}"
+          mkdir work
+          echo "${{ inputs.urls }}" > urls.txt
+
+      - name: Validate URLs
+        run: |
+          echo "validating"
+          cat urls.txt
