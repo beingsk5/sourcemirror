@@ -1,4 +1,4 @@
-const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev/";
+const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev";
 
 const btn = document.getElementById("startBtn");
 const textarea = document.getElementById("urls");
@@ -36,16 +36,14 @@ btn.onclick = async () => {
 
   const data = await r.json();
 
-  // ✅ 1️⃣ Store run_id and start polling
-  const runId = data.run_id;
-  startPolling(runId);
-
-  if (!data.ok) {
+  if (!data.ok || !data.run_id) {
     alert("Failed to start job");
     btn.disabled = false;
     btn.textContent = "Mirror to SourceForge";
     return;
   }
+
+  const runId = data.run_id;
 
   jobBox.classList.remove("hidden");
   jobIdEl.textContent = jobId;
@@ -55,11 +53,13 @@ btn.onclick = async () => {
 
   for (const u of urls) {
     const name = fileNameFromUrl(u);
-
     filesArea.appendChild(renderFileCard(name));
   }
 
   btn.textContent = "Started";
+
+  // ✅ start polling with BOTH runId and jobId
+  startPolling(runId, jobId);
 };
 
 function renderFileCard(name) {
@@ -101,15 +101,16 @@ function escapeHtml(s) {
 }
 
 /* =========================================================
-   2️⃣ Polling logic – appended at the bottom (only addition)
+   Polling logic
    ========================================================= */
 
-async function startPolling(runId) {
+async function startPolling(runId, jobId) {
 
   const timer = setInterval(async () => {
 
     const r = await fetch(
-      WORKER_URL + "/status?run_id=" + runId
+      WORKER_URL + "/status?run_id=" + encodeURIComponent(runId) +
+      "&job_id=" + encodeURIComponent(jobId)
     );
 
     if (!r.ok) return;
@@ -154,12 +155,14 @@ function updateStage(stage) {
 
       if (i < index) {
         r.className = "text-green-400";
-        r.textContent = r.textContent.replace("○", "✔");
+        if (r.textContent.startsWith("○"))
+          r.textContent = r.textContent.replace("○", "✔");
       } else if (i === index) {
         r.className = "text-blue-400";
-        r.textContent = r.textContent.replace("○", "●").replace("✔","●");
+        r.textContent = r.textContent.replace(/^✔|^○|^●/, "●");
       } else {
         r.className = "text-zinc-500";
+        r.textContent = r.textContent.replace(/^✔|^●/, "○");
       }
 
     });
