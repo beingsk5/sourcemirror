@@ -1,4 +1,4 @@
-const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev/";
+const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev";
 
 const btn = document.getElementById("startBtn");
 const textarea = document.getElementById("urls");
@@ -25,12 +25,12 @@ btn.onclick = async () => {
   btn.disabled = true;
   btn.textContent = "Starting…";
 
-  const r = await fetch(WORKER_URL, {
+  const r = await fetch(WORKER_URL + "/", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       job_id: jobId,
-      urls: urls.join("\n")
+      urls: urls              // ✅ IMPORTANT: array, not joined string
     })
   });
 
@@ -43,15 +43,18 @@ btn.onclick = async () => {
     return;
   }
 
+  // ✅ store run_id and start polling
+  const runId = data.run_id;
+  startPolling(runId);
+
   jobBox.classList.remove("hidden");
   jobIdEl.textContent = jobId;
-  jobStatus.textContent = "Queued";
+  jobStatus.textContent = "queued";
 
   filesArea.innerHTML = "";
 
   for (const u of urls) {
     const name = fileNameFromUrl(u);
-
     filesArea.appendChild(renderFileCard(name));
   }
 
@@ -93,4 +96,75 @@ function escapeHtml(s) {
   return s.replace(/[&<>"']/g, m => ({
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
   }[m]));
+}
+
+/* ---------------------------------------------------
+   🔁 Status polling
+--------------------------------------------------- */
+
+async function startPolling(runId) {
+
+  const timer = setInterval(async () => {
+
+    try {
+
+      const r = await fetch(
+        WORKER_URL + "/status?run_id=" + encodeURIComponent(runId)
+      );
+
+      if (!r.ok) return;
+
+      const data = await r.json();
+
+      jobStatus.textContent =
+        data.status === "completed"
+          ? (data.conclusion || "completed")
+          : data.status;
+
+      if (data.stage) {
+        updateStage(data.stage);
+      }
+
+      if (data.status === "completed") {
+        clearInterval(timer);
+      }
+
+    } catch (e) {
+      // ignore temporary network errors
+    }
+
+  }, 5000);
+}
+
+function updateStage(stage) {
+
+  const map = {
+    validating: 0,
+    downloading: 1,
+    uploading: 2,
+    verifying: 3
+  };
+
+  const index = map[stage];
+  if (index === undefined) return;
+
+  document.querySelectorAll("#filesArea > div").forEach(card => {
+
+    const rows = card.querySelectorAll(".space-y-1 > div");
+
+    rows.forEach((r, i) => {
+
+      if (i < index) {
+        r.className = "text-green-400";
+        r.textContent = r.textContent.replace("○", "✔").replace("●", "✔");
+      } else if (i === index) {
+        r.className = "text-blue-400";
+        r.textContent = r.textContent.replace("○", "●").replace("✔","●");
+      } else {
+        r.className = "text-zinc-500";
+      }
+
+    });
+
+  });
 }
