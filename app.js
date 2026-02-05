@@ -1,4 +1,4 @@
-const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev";
+const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev/";
 
 const btn = document.getElementById("startBtn");
 const textarea = document.getElementById("urls");
@@ -25,16 +25,20 @@ btn.onclick = async () => {
   btn.disabled = true;
   btn.textContent = "Starting…";
 
-  const r = await fetch(WORKER_URL + "/", {
+  const r = await fetch(WORKER_URL, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       job_id: jobId,
-      urls: urls              // ✅ IMPORTANT: array, not joined string
+      urls: urls.join("\n")
     })
   });
 
   const data = await r.json();
+
+  // ✅ 1️⃣ Store run_id and start polling
+  const runId = data.run_id;
+  startPolling(runId);
 
   if (!data.ok) {
     alert("Failed to start job");
@@ -43,18 +47,15 @@ btn.onclick = async () => {
     return;
   }
 
-  // ✅ store run_id and start polling
-  const runId = data.run_id;
-  startPolling(runId);
-
   jobBox.classList.remove("hidden");
   jobIdEl.textContent = jobId;
-  jobStatus.textContent = "queued";
+  jobStatus.textContent = "Queued";
 
   filesArea.innerHTML = "";
 
   for (const u of urls) {
     const name = fileNameFromUrl(u);
+
     filesArea.appendChild(renderFileCard(name));
   }
 
@@ -98,39 +99,33 @@ function escapeHtml(s) {
   }[m]));
 }
 
-/* ---------------------------------------------------
-   🔁 Status polling
---------------------------------------------------- */
+/* =========================================================
+   2️⃣ Polling logic – appended at the bottom (only addition)
+   ========================================================= */
 
 async function startPolling(runId) {
 
   const timer = setInterval(async () => {
 
-    try {
+    const r = await fetch(
+      WORKER_URL + "/status?run_id=" + runId
+    );
 
-      const r = await fetch(
-        WORKER_URL + "/status?run_id=" + encodeURIComponent(runId)
-      );
+    if (!r.ok) return;
 
-      if (!r.ok) return;
+    const data = await r.json();
 
-      const data = await r.json();
+    jobStatus.textContent =
+      data.status === "completed"
+        ? (data.conclusion || "completed")
+        : data.status;
 
-      jobStatus.textContent =
-        data.status === "completed"
-          ? (data.conclusion || "completed")
-          : data.status;
+    if (data.stage) {
+      updateStage(data.stage);
+    }
 
-      if (data.stage) {
-        updateStage(data.stage);
-      }
-
-      if (data.status === "completed") {
-        clearInterval(timer);
-      }
-
-    } catch (e) {
-      // ignore temporary network errors
+    if (data.status === "completed") {
+      clearInterval(timer);
     }
 
   }, 5000);
@@ -146,6 +141,7 @@ function updateStage(stage) {
   };
 
   const index = map[stage];
+
   if (index === undefined) return;
 
   document.querySelectorAll("#filesArea > div").forEach(card => {
@@ -156,7 +152,7 @@ function updateStage(stage) {
 
       if (i < index) {
         r.className = "text-green-400";
-        r.textContent = r.textContent.replace("○", "✔").replace("●", "✔");
+        r.textContent = r.textContent.replace("○", "✔");
       } else if (i === index) {
         r.className = "text-blue-400";
         r.textContent = r.textContent.replace("○", "●").replace("✔","●");
