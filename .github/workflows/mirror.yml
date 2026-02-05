@@ -4,11 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       urls:
-        description: "One URL per line"
         required: true
         type: string
       job_id:
-        description: "Public job id"
         required: true
         type: string
 
@@ -17,13 +15,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Prepare
         run: |
-          echo "JOB_ID=${{ inputs.job_id }}"
           mkdir work
           echo "${{ inputs.urls }}" > urls.txt
 
-      - name: Validate URLs
+      - name: Stage – validating
         run: |
-          echo "validating"
-          cat urls.txt
+          echo "validating" > stage.txt
+
+      - name: Stage – downloading
+        run: |
+          echo "downloading" > stage.txt
+          sleep 10
+
+      - name: Stage – uploading
+        run: |
+          echo "uploading" > stage.txt
+          sleep 10
+
+      - name: Stage – verifying
+        run: |
+          echo "verifying" > stage.txt
+          sleep 5
+
+      - name: Upload stage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stage
+          path: stage.txt
