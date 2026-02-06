@@ -147,12 +147,15 @@ function updateStage(stage) {
   };
 
   const activeColors = {
-    validating:  "text-yellow-400",
-    downloading: "text-blue-400",
-    uploading:   "text-purple-400",
-    verifying:   "text-orange-400",
-    finished:    "text-emerald-400"
+    validating:  "#facc15", // yellow
+    downloading: "#60a5fa", // blue
+    uploading:   "#c084fc", // purple
+    verifying:   "#fb923c", // orange
+    finished:    "#34d399"  // green
   };
+
+  const completedColor = "#34d399"; // green
+  const pendingColor   = "#a1a1aa"; // gray
 
   const index = map[stage];
   if (index === undefined) return;
@@ -163,22 +166,19 @@ function updateStage(stage) {
 
     rows.forEach((row, i) => {
 
-      // completed stages
       if (i < index) {
-        row.className = "text-emerald-400";
+        row.style.color = completedColor;
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "✔");
         return;
       }
 
-      // current stage (color depends on stage name)
       if (i === index) {
-        row.className = activeColors[stage] || "text-blue-400";
+        row.style.color = activeColors[stage] || "#60a5fa";
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "●");
         return;
       }
 
-      // pending
-      row.className = "text-zinc-500";
+      row.style.color = pendingColor;
       row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
 
     });
