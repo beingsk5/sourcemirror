@@ -130,7 +130,7 @@ async function startPolling(runId, jobId) {
       clearInterval(timer);
     }
 
-  }, 5000);
+  }, 1000);   // 1 second
 }
 
 function updateStage(stage) {
