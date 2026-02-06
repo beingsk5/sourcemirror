@@ -9,7 +9,7 @@ on:
       job_id:
         required: true
         type: string
-        
+
 permissions:
   contents: write
 
@@ -28,8 +28,11 @@ jobs:
           git config user.name "progress-bot"
           git config user.email "progress@bot"
 
-          if git show-ref --quiet refs/remotes/origin/progress; then
+          git fetch origin
+
+          if git show-ref --verify --quiet refs/remotes/origin/progress; then
             git checkout progress
+            git pull origin progress
           else
             git checkout --orphan progress
             git rm -rf .
@@ -37,46 +40,60 @@ jobs:
             git add progress
             git commit -m "init progress branch"
             git push origin progress
-            git checkout -
-            git checkout progress
           fi
 
+      # -----------------------------
+      # validating
+      # -----------------------------
       - name: Stage – validating
         run: |
           mkdir -p progress
           echo "validating" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
-          git commit -m "stage validating ${{ inputs.job_id }}"
+          git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
+          sleep 60
 
+      # -----------------------------
+      # downloading
+      # -----------------------------
       - name: Stage – downloading
         run: |
           echo "downloading" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
-          git commit -m "stage downloading ${{ inputs.job_id }}"
+          git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
+          sleep 60
 
+      # -----------------------------
+      # uploading
+      # -----------------------------
       - name: Stage – uploading
         run: |
           echo "uploading" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
-          git commit -m "stage uploading ${{ inputs.job_id }}"
+          git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
+          sleep 60
 
+      # -----------------------------
+      # verifying
+      # -----------------------------
       - name: Stage – verifying
         run: |
           echo "verifying" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
-          git commit -m "stage verifying ${{ inputs.job_id }}"
+          git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 5
+          sleep 60
 
+      # -----------------------------
+      # finished (always)
+      # -----------------------------
       - name: Stage – finished
         if: always()
         run: |
           echo "finished" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
-          git commit -m "stage finished ${{ inputs.job_id }}"
+          git commit -m "stage finished ${{ inputs.job_id }}" || true
           git push origin progress
