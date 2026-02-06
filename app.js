@@ -58,7 +58,6 @@ btn.onclick = async () => {
 
   btn.textContent = "Started";
 
-  // ✅ start polling with BOTH runId and jobId
   startPolling(runId, jobId);
 };
 
@@ -66,18 +65,17 @@ function renderFileCard(name) {
 
   const div = document.createElement("div");
 
-  div.className =
-    "border border-zinc-800 rounded-lg p-4";
+  div.className = "border border-zinc-800 rounded-lg p-4";
 
   div.innerHTML = `
     <div class="font-medium mb-2">${escapeHtml(name)}</div>
 
     <div class="space-y-1 text-sm">
-      <div class="text-blue-400">● Validating</div>
-      <div class="text-zinc-500">○ Downloading</div>
-      <div class="text-zinc-500">○ Uploading to Mirror</div>
-      <div class="text-zinc-500">○ Verifying</div>
-      <div class="text-zinc-500">○ Finished</div>
+      <div>● Validating</div>
+      <div>○ Downloading</div>
+      <div>○ Uploading to Mirror</div>
+      <div>○ Verifying</div>
+      <div>○ Finished</div>
     </div>
   `;
 
@@ -109,8 +107,9 @@ async function startPolling(runId, jobId) {
   const timer = setInterval(async () => {
 
     const r = await fetch(
-      WORKER_URL + "/status?run_id=" + encodeURIComponent(runId) +
-      "&job_id=" + encodeURIComponent(jobId)
+      WORKER_URL +
+        "/status?run_id=" + encodeURIComponent(runId) +
+        "&job_id=" + encodeURIComponent(jobId)
     );
 
     if (!r.ok) return;
@@ -123,7 +122,7 @@ async function startPolling(runId, jobId) {
         : data.status;
 
     if (data.stage) {
-      updateStage(data.stage);
+      updateStage(data.stage.toLowerCase().trim());
     }
 
     if (data.status === "completed") {
@@ -132,6 +131,10 @@ async function startPolling(runId, jobId) {
 
   }, 1000);   // 1 second
 }
+
+/* =========================================================
+   Skip-tolerant stage updater
+   ========================================================= */
 
 function updateStage(stage) {
 
@@ -144,25 +147,25 @@ function updateStage(stage) {
   };
 
   const index = map[stage];
-
   if (index === undefined) return;
 
   document.querySelectorAll("#filesArea > div").forEach(card => {
 
     const rows = card.querySelectorAll(".space-y-1 > div");
 
-    rows.forEach((r, i) => {
+    rows.forEach((row, i) => {
 
       if (i < index) {
-        r.className = "text-green-400";
-        if (r.textContent.startsWith("○"))
-          r.textContent = r.textContent.replace("○", "✔");
-      } else if (i === index) {
-        r.className = "text-blue-400";
-        r.textContent = r.textContent.replace(/^✔|^○|^●/, "●");
-      } else {
-        r.className = "text-zinc-500";
-        r.textContent = r.textContent.replace(/^✔|^●/, "○");
+        row.className = "text-green-400";
+        row.textContent = row.textContent.replace(/^●|^○|^✔/, "✔");
+      }
+      else if (i === index) {
+        row.className = "text-blue-400";
+        row.textContent = row.textContent.replace(/^●|^○|^✔/, "●");
+      }
+      else {
+        row.className = "text-zinc-500";
+        row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
       }
 
     });
