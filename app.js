@@ -129,11 +129,11 @@ async function startPolling(runId, jobId) {
       clearInterval(timer);
     }
 
-  }, 1000);   // 1 second
+  }, 1000);
 }
 
 /* =========================================================
-   Skip-tolerant stage updater
+   Per-stage colored + skip-safe updater
    ========================================================= */
 
 function updateStage(stage) {
@@ -146,6 +146,14 @@ function updateStage(stage) {
     finished: 4
   };
 
+  const activeColors = {
+    validating:  "text-yellow-400",
+    downloading: "text-blue-400",
+    uploading:   "text-purple-400",
+    verifying:   "text-orange-400",
+    finished:    "text-emerald-400"
+  };
+
   const index = map[stage];
   if (index === undefined) return;
 
@@ -155,18 +163,23 @@ function updateStage(stage) {
 
     rows.forEach((row, i) => {
 
+      // completed stages
       if (i < index) {
-        row.className = "text-green-400";
+        row.className = "text-emerald-400";
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "✔");
+        return;
       }
-      else if (i === index) {
-        row.className = "text-blue-400";
+
+      // current stage (color depends on stage name)
+      if (i === index) {
+        row.className = activeColors[stage] || "text-blue-400";
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "●");
+        return;
       }
-      else {
-        row.className = "text-zinc-500";
-        row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
-      }
+
+      // pending
+      row.className = "text-zinc-500";
+      row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
 
     });
 
