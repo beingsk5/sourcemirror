@@ -8,6 +8,9 @@ const jobIdEl = document.getElementById("jobId");
 const filesArea = document.getElementById("filesArea");
 const jobStatus = document.getElementById("jobStatus");
 
+// ---- prevents going backwards when webhooks arrive out-of-order
+let lastStageIndex = -1;
+
 btn.onclick = async () => {
 
   const urls = textarea.value
@@ -57,6 +60,9 @@ btn.onclick = async () => {
   }
 
   btn.textContent = "Started";
+
+  // reset monotonic stage guard for new job
+  lastStageIndex = -1;
 
   startPolling(runId, jobId);
 };
@@ -133,7 +139,7 @@ async function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   Per-stage colored + skip-safe updater
+   Per-stage colored + skip-safe + monotonic updater
    ========================================================= */
 
 function updateStage(stage) {
@@ -157,8 +163,16 @@ function updateStage(stage) {
   const completedColor = "#34d399"; // green
   const pendingColor   = "#a1a1aa"; // gray
 
-  const index = map[stage];
-  if (index === undefined) return;
+  const incomingIndex = map[stage];
+  if (incomingIndex === undefined) return;
+
+  // ---- do not allow going backwards
+  if (incomingIndex < lastStageIndex) {
+    return;
+  }
+
+  lastStageIndex = incomingIndex;
+  const index = incomingIndex;
 
   document.querySelectorAll("#filesArea > div").forEach(card => {
 
