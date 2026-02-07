@@ -41,6 +41,14 @@ jobs:
           fetch-depth: 0
 
       # --------------------------------------------------
+      # record job start time
+      # --------------------------------------------------
+      - name: Record job start time
+        run: |
+          mkdir -p work
+          date +%s > work/start_time.txt
+
+      # --------------------------------------------------
       # prepare progress branch
       # --------------------------------------------------
       - name: Prepare progress branch
@@ -70,7 +78,7 @@ jobs:
         run: |
           mkdir -p work
           python3 << 'EOF'
-          import json, os, sys
+          import json, os
 
           links = os.environ.get("LINKS")
           urls  = os.environ.get("URLS")
@@ -173,29 +181,29 @@ jobs:
           sleep 60
 
       # --------------------------------------------------
-      # produce result + summary (demo logic)
+      # produce result + summary
       # --------------------------------------------------
       - name: Build result and summary
         run: |
           mkdir -p progress/result
 
           python3 << 'EOF'
-          import json, time
+          import json, time, os
 
-          start = time.time()
+          with open("work/start_time.txt") as f:
+              start = int(f.read().strip())
 
           with open("work/files.json") as f:
               files = json.load(f)
 
-          # demo success / failure behaviour:
-          # if file name contains "fail" -> mark failed
-          for f in files:
-              if "fail" in f["final"].lower():
-                  f["status"] = "failed"
-                  f["size"] = 0
+          # demo success / failure behaviour
+          for fobj in files:
+              if "fail" in fobj["final"].lower():
+                  fobj["status"] = "failed"
+                  fobj["size"] = 0
               else:
-                  f["status"] = "ok"
-                  f["size"] = 123456
+                  fobj["status"] = "ok"
+                  fobj["size"] = 123456
 
           total_files = len(files)
           total_size  = sum(x.get("size",0) for x in files)
@@ -206,20 +214,24 @@ jobs:
               "time_taken": int(time.time() - start)
           }
 
+          notes = os.environ.get("NOTES","")
+
           out = {
               "files": files,
               "summary": summary,
-              "notes": """${{ inputs.notes }}"""
+              "notes": notes
           }
 
           with open("progress/result/${{ inputs.job_id }}.json","w") as f:
               json.dump(out,f,indent=2)
 
           EOF
+        env:
+          NOTES: ${{ inputs.notes }}
 
-          git add progress/result/${{ inputs.job_id }}.json
-          git commit -m "result ${{ inputs.job_id }}" || true
-          git push origin progress
+           git add progress/result/${{ inputs.job_id }}.json
+           git commit -m "result ${{ inputs.job_id }}" || true
+           git push origin progress
 
       # -----------------------------
       # finished (always)
