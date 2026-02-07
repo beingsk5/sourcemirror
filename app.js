@@ -1,10 +1,12 @@
 const WORKER_URL = "https://sourcemirror.takeiteasy4possible.workers.dev";
 
 const btn = document.getElementById("startBtn");
-const textarea = document.getElementById("urls");
 
-const jobBox = document.getElementById("jobBox");
-const jobIdEl = document.getElementById("jobId");
+const linksArea = document.getElementById("linksArea");
+const jobNotes  = document.getElementById("jobNotes");
+
+const jobBox    = document.getElementById("jobBox");
+const jobIdEl   = document.getElementById("jobId");
 const filesArea = document.getElementById("filesArea");
 const jobStatus = document.getElementById("jobStatus");
 
@@ -13,15 +15,16 @@ let currentJobId = null;
 let currentRunId = null;
 let pollingTimer = null;
 
+/* =========================================================
+   Start button
+   ========================================================= */
+
 btn.onclick = async () => {
 
-  const urls = textarea.value
-    .split("\n")
-    .map(v => v.trim())
-    .filter(v => v.length);
+  const links = collectLinksFromUI();
 
-  if (!urls.length) {
-    alert("Please paste at least one URL");
+  if (!links.length) {
+    alert("Please add at least one valid link");
     return;
   }
 
@@ -36,21 +39,21 @@ btn.onclick = async () => {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       job_id: jobId,
-      urls: urls.join("\n")
+      links: links,
+      notes: jobNotes.value || ""
     })
   });
 
-  const data = await r.json();
+  const data = await r.json().catch(() => null);
 
-  if (!data.ok || !data.run_id) {
+  if (!data || !data.ok || !data.run_id) {
     alert("Failed to start job");
     btn.disabled = false;
-    btn.textContent = "Mirror to SourceForge";
+    btn.textContent = "Start mirroring";
     return;
   }
 
-  const runId = data.run_id;
-  currentRunId = runId;
+  currentRunId = data.run_id;
 
   jobBox.classList.remove("hidden");
   jobIdEl.textContent = jobId;
@@ -58,15 +61,47 @@ btn.onclick = async () => {
 
   filesArea.innerHTML = "";
 
-  for (const u of urls) {
-    const name = fileNameFromUrl(u);
+  links.forEach(l => {
+    const name = fileNameFromUrl(l.url);
     filesArea.appendChild(renderFileCard(name));
-  }
+  });
 
   lastStageIndex = -1;
 
-  startPolling(runId, jobId);
+  startPolling(currentRunId, currentJobId);
 };
+
+
+/* =========================================================
+   Read links from UI
+   ========================================================= */
+
+function collectLinksFromUI() {
+
+  const cards = linksArea.querySelectorAll("> div");
+  const out = [];
+
+  cards.forEach(card => {
+
+    const url = card.querySelector(".urlInput")?.value.trim();
+    if (!url) return;
+
+    out.push({
+      url: url,
+      folder: card.querySelector(".folderInput")?.value.trim() || "",
+      rename: card.querySelector(".renameInput")?.value.trim() || "",
+      allow_ext: card.querySelector(".allowExtChk")?.checked || false,
+      notes: card.querySelector(".notesInput")?.value.trim() || ""
+    });
+  });
+
+  return out;
+}
+
+
+/* =========================================================
+   Stage cards
+   ========================================================= */
 
 function renderFileCard(name) {
 
@@ -89,24 +124,9 @@ function renderFileCard(name) {
   return div;
 }
 
-function fileNameFromUrl(u) {
-  try {
-    const p = new URL(u).pathname;
-    const b = p.split("/").pop();
-    return b || "file";
-  } catch {
-    return "file";
-  }
-}
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, m => ({
-    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
-  }[m]));
-}
 
 /* =========================================================
-   Polling logic
+   Polling
    ========================================================= */
 
 function startPolling(runId, jobId) {
@@ -138,11 +158,9 @@ function startPolling(runId, jobId) {
 
       clearInterval(pollingTimer);
 
-      // restore start button
       btn.disabled = false;
-      btn.textContent = "Mirror to SourceForge";
+      btn.textContent = "Start mirroring";
 
-      // show retry UI if needed
       if (Array.isArray(data.files)) {
         renderResultFiles(data.files);
       }
@@ -150,6 +168,7 @@ function startPolling(runId, jobId) {
 
   }, 1000);
 }
+
 
 /* =========================================================
    Result + retry UI
@@ -162,21 +181,24 @@ function renderResultFiles(files) {
   files.forEach(f => {
 
     const row = document.createElement("div");
-    row.className = "border border-zinc-800 rounded-lg p-3 text-sm flex items-center justify-between gap-3";
+    row.className =
+      "border border-zinc-800 rounded-lg p-3 text-sm flex items-center justify-between gap-3";
 
     const left = document.createElement("div");
+
     left.innerHTML = `
-      <div class="font-medium">${escapeHtml(f.final || f.original || "")}</div>
+      <div class="font-medium">
+        ${escapeHtml(f.final || f.original || "")}
+      </div>
       <div class="text-xs ${
         f.status === "failed" ? "text-red-400" : "text-green-400"
       }">
-        ${f.status || "unknown"}
+        ${escapeHtml(f.status || "unknown")}
       </div>
     `;
 
     const right = document.createElement("div");
 
-    // retry only if failed
     if (f.status === "failed") {
 
       const btnRetry = document.createElement("button");
@@ -203,8 +225,9 @@ function renderResultFiles(files) {
   });
 }
 
+
 /* =========================================================
-   Manual retry trigger
+   Retry
    ========================================================= */
 
 async function triggerRetry(fileList) {
@@ -227,33 +250,16 @@ async function triggerRetry(fileList) {
     return;
   }
 
-  // visually go back to processing state
   btn.disabled = true;
   btn.textContent = "Processing…";
 
   jobStatus.textContent = "retrying";
 
-  // new run will be created by GitHub,
-  // so we must wait a little and re-fetch latest run id
-  await refreshRunAndRestartPolling();
-}
-
-async function refreshRunAndRestartPolling() {
-
-  const r = await fetch(
-    WORKER_URL +
-      "/status?run_id=" +
-      encodeURIComponent(currentRunId) +
-      "&job_id=" +
-      encodeURIComponent(currentJobId)
-  );
-
-  // we cannot discover new run_id from /status,
-  // so simply restart polling using the same run id.
-  // Worker side will still mark finished correctly.
+  lastStageIndex = -1;
 
   startPolling(currentRunId, currentJobId);
 }
+
 
 /* =========================================================
    Stage UI
@@ -313,4 +319,29 @@ function updateStage(stage) {
     });
 
   });
+}
+
+
+/* =========================================================
+   Helpers
+   ========================================================= */
+
+function fileNameFromUrl(u) {
+  try {
+    const p = new URL(u).pathname;
+    const b = p.split("/").pop();
+    return b || "file";
+  } catch {
+    return "file";
+  }
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    "\"":"&quot;",
+    "'":"&#039;"
+  }[m]));
 }
