@@ -103,7 +103,7 @@ function renderLinksUI() {
 
           <input
             class="folderInput w-full p-2 rounded bg-zinc-900 border border-zinc-800"
-            placeholder="Folder path (ex: roms/android/14)"
+            placeholder="Folder path (ex: Create Your Own Folder)"
             value="${escapeHtml(item.folder)}"
           >
 
@@ -116,7 +116,7 @@ function renderLinksUI() {
 
             <input
               class="extInput p-2 rounded bg-zinc-900 border border-zinc-800"
-              placeholder="ext"
+              placeholder="ext (zip/exe/mp4/apk)"
               value="${escapeHtml(item.ext)}"
               disabled
             >
