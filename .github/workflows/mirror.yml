@@ -41,14 +41,6 @@ jobs:
           fetch-depth: 0
 
       # --------------------------------------------------
-      # record job start time
-      # --------------------------------------------------
-      - name: Record job start time
-        run: |
-          mkdir -p work
-          date +%s > work/start_time.txt
-
-      # --------------------------------------------------
       # prepare progress branch
       # --------------------------------------------------
       - name: Prepare progress branch
@@ -71,10 +63,17 @@ jobs:
           fi
 
       # --------------------------------------------------
+      # record job start time   (MUST be after checkout progress)
+      # --------------------------------------------------
+      - name: Record job start time
+        run: |
+          mkdir -p work
+          date +%s > work/start_time.txt
+
+      # --------------------------------------------------
       # build working file list
       # --------------------------------------------------
       - name: Build job file list
-        id: list
         run: |
           mkdir -p work
           python3 << 'EOF'
@@ -196,7 +195,6 @@ jobs:
           with open("work/files.json") as f:
               files = json.load(f)
 
-          # demo success / failure behaviour
           for fobj in files:
               if "fail" in fobj["final"].lower():
                   fobj["status"] = "failed"
@@ -226,12 +224,12 @@ jobs:
               json.dump(out,f,indent=2)
 
           EOF
+
+          git add progress/result/${{ inputs.job_id }}.json
+          git commit -m "result ${{ inputs.job_id }}" || true
+          git push origin progress
         env:
           NOTES: ${{ inputs.notes }}
-
-           git add progress/result/${{ inputs.job_id }}.json
-           git commit -m "result ${{ inputs.job_id }}" || true
-           git push origin progress
 
       # -----------------------------
       # finished (always)
