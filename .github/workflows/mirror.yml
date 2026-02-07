@@ -3,11 +3,28 @@ name: Public SourceForge Mirror
 on:
   workflow_dispatch:
     inputs:
-      urls:
-        required: true
-        type: string
       job_id:
         required: true
+        type: string
+
+      # old simple mode
+      urls:
+        required: false
+        type: string
+
+      # new advanced mode
+      links:
+        required: false
+        type: string
+
+      # notes
+      notes:
+        required: false
+        type: string
+
+      # retry mode
+      retry_files:
+        required: false
         type: string
 
 permissions:
@@ -23,6 +40,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      # --------------------------------------------------
+      # prepare progress branch
+      # --------------------------------------------------
       - name: Prepare progress branch
         run: |
           git config user.name "progress-bot"
@@ -41,6 +61,71 @@ jobs:
             git commit -m "init progress branch"
             git push origin progress
           fi
+
+      # --------------------------------------------------
+      # build working file list
+      # --------------------------------------------------
+      - name: Build job file list
+        id: list
+        run: |
+          mkdir -p work
+          python3 << 'EOF'
+          import json, os, sys
+
+          links = os.environ.get("LINKS")
+          urls  = os.environ.get("URLS")
+          retry = os.environ.get("RETRY")
+
+          files = []
+
+          # retry mode
+          if retry:
+              r = json.loads(retry)
+              for f in r:
+                  files.append({
+                      "original": f,
+                      "final": f,
+                      "folder": "",
+                      "status": "retry"
+                  })
+
+          # advanced mode
+          elif links:
+              arr = json.loads(links)
+              for x in arr:
+                  url = x.get("url","")
+                  name = url.split("/")[-1] or "file"
+                  final = x.get("rename") or name
+                  folder = x.get("folder") or ""
+                  files.append({
+                      "original": name,
+                      "final": final,
+                      "folder": folder,
+                      "status": "pending"
+                  })
+
+          # old mode
+          elif urls:
+              for u in urls.splitlines():
+                  u = u.strip()
+                  if not u:
+                      continue
+                  name = u.split("/")[-1] or "file"
+                  files.append({
+                      "original": name,
+                      "final": name,
+                      "folder": "",
+                      "status": "pending"
+                  })
+
+          with open("work/files.json","w") as f:
+              json.dump(files,f,indent=2)
+
+          EOF
+        env:
+          LINKS: ${{ inputs.links }}
+          URLS:  ${{ inputs.urls }}
+          RETRY: ${{ inputs.retry_files }}
 
       # -----------------------------
       # validating
@@ -86,6 +171,55 @@ jobs:
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
           sleep 60
+
+      # --------------------------------------------------
+      # produce result + summary (demo logic)
+      # --------------------------------------------------
+      - name: Build result and summary
+        run: |
+          mkdir -p progress/result
+
+          python3 << 'EOF'
+          import json, time
+
+          start = time.time()
+
+          with open("work/files.json") as f:
+              files = json.load(f)
+
+          # demo success / failure behaviour:
+          # if file name contains "fail" -> mark failed
+          for f in files:
+              if "fail" in f["final"].lower():
+                  f["status"] = "failed"
+                  f["size"] = 0
+              else:
+                  f["status"] = "ok"
+                  f["size"] = 123456
+
+          total_files = len(files)
+          total_size  = sum(x.get("size",0) for x in files)
+
+          summary = {
+              "total_files": total_files,
+              "total_size": total_size,
+              "time_taken": int(time.time() - start)
+          }
+
+          out = {
+              "files": files,
+              "summary": summary,
+              "notes": """${{ inputs.notes }}"""
+          }
+
+          with open("progress/result/${{ inputs.job_id }}.json","w") as f:
+              json.dump(out,f,indent=2)
+
+          EOF
+
+          git add progress/result/${{ inputs.job_id }}.json
+          git commit -m "result ${{ inputs.job_id }}" || true
+          git push origin progress
 
       # -----------------------------
       # finished (always)
