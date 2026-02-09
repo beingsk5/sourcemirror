@@ -39,29 +39,36 @@ if (!compressionBox) {
   compressionBox = document.createElement("div");
   compressionBox.id = "compressionBox";
   compressionBox.className =
-    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
+    "mt-8 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-lg";
 
   compressionBox.innerHTML = `
-    <div class="font-medium mb-2">Compression (optional)</div>
+    <div class="flex items-center justify-between mb-1">
+      <div class="text-sm font-semibold">Archive & compression</div>
+      <span class="text-xs text-zinc-500">Optional</span>
+    </div>
 
-    <label class="flex items-center gap-2 text-sm text-zinc-300 mb-3">
-      <input type="checkbox" id="compressEnable">
-      Compress files before uploading to SourceForge
+    <div class="text-xs text-zinc-500 mb-4">
+      Package files into a single archive before uploading to SourceForge.
+    </div>
+
+    <label class="flex items-center gap-2 text-sm text-zinc-300 mb-4">
+      <input type="checkbox" id="compressEnable" class="accent-blue-500">
+      Enable compression
     </label>
 
-    <div class="grid grid-cols-2 gap-3 mb-3">
+    <div class="grid grid-cols-2 gap-4 mb-3">
 
       <div>
         <label class="block text-xs text-zinc-400 mb-1">
-          Compression level
+          Compression profile
         </label>
         <select id="compressLevel"
-          class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
-          <option value="store">Store (no compression, fastest)</option>
-          <option value="low">Low (very fast)</option>
+          class="w-full p-2 rounded-lg bg-zinc-950 border border-zinc-800">
+          <option value="store">Store – no compression (fastest)</option>
+          <option value="low">Low – very fast</option>
           <option value="mid" selected>Balanced</option>
           <option value="high">High compression</option>
-          <option value="ultra">Ultra (slowest, smallest size)</option>
+          <option value="ultra">Ultra – smallest size</option>
         </select>
       </div>
 
@@ -70,26 +77,27 @@ if (!compressionBox) {
           Archive format
         </label>
         <select id="compressType"
-          class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
+          class="w-full p-2 rounded-lg bg-zinc-950 border border-zinc-800">
           <option value="zip">ZIP (.zip)</option>
           <option value="7z">7-Zip (.7z)</option>
           <option value="tar.gz">TAR + GZip (.tar.gz)</option>
           <option value="tar.bz2">TAR + BZip2 (.tar.bz2)</option>
           <option value="tar.xz">TAR + XZ (.tar.xz)</option>
-          <option value="gz">GZip single file (.gz)</option>
-          <option value="bz2">BZip2 single file (.bz2)</option>
-          <option value="xz">XZ single file (.xz)</option>
+          <option value="gz">GZip (.gz)</option>
+          <option value="bz2">BZip2 (.bz2)</option>
+          <option value="xz">XZ (.xz)</option>
         </select>
       </div>
 
     </div>
 
     <div id="compressionNote"
-      class="hidden text-sm text-yellow-300 border border-yellow-500/30 bg-yellow-500/10 rounded p-3">
-      When compression is enabled, only the generated archive will be uploaded.
-      Original files will not be uploaded separately.
+      class="hidden text-xs leading-relaxed text-yellow-300
+             border border-yellow-500/30 bg-yellow-500/10 rounded-lg p-3">
+      When compression is enabled, only the generated archive is uploaded.
+      Original files are not published individually.
       File renaming is supported, but manual extension changes are disabled
-      because the selected archive format determines the final file extension.
+      because the selected archive format controls the final file extension.
     </div>
   `;
 }
@@ -104,7 +112,7 @@ if (!previewBox) {
   previewBox = document.createElement("div");
   previewBox.id = "previewBox";
   previewBox.className =
-    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
+    "mt-8 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-lg";
 }
 
 /* =========================================================
@@ -118,10 +126,13 @@ if (!historyBox) {
   historyBox = document.createElement("div");
   historyBox.id = "historyBox";
   historyBox.className =
-    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
+    "mt-12 bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 shadow-lg";
 
   historyBox.innerHTML = `
-    <div class="font-medium mb-2">Recent mirror history</div>
+    <div class="font-semibold mb-1">Recent jobs</div>
+    <div class="text-xs text-zinc-500 mb-3">
+      Last completed and failed mirror tasks
+    </div>
     <div id="historyList" class="space-y-2 text-sm text-zinc-300">
       Loading…
     </div>
@@ -129,11 +140,12 @@ if (!historyBox) {
 }
 
 /* =========================================================
-   Place panels in required order
+   Place panels in professional order
    ========================================================= */
 
 const container = linksArea.parentElement;
 
+/* compression -> preview -> job notes */
 if (!compressionBox.parentElement) {
   container.insertBefore(compressionBox, jobNotes.parentElement);
 }
@@ -142,12 +154,13 @@ if (!previewBox.parentElement) {
   container.insertBefore(previewBox, jobNotes.parentElement);
 }
 
+/* history must always be LAST */
 if (!historyBox.parentElement) {
-  container.insertBefore(historyBox, jobNotes.parentElement);
+  container.appendChild(historyBox);
 }
 
 /* =========================================================
-   Compression change reactions
+   Compression reactions
    ========================================================= */
 
 ["compressEnable","compressLevel","compressType"].forEach(id=>{
@@ -159,7 +172,7 @@ if (!historyBox.parentElement) {
 });
 
 /* =========================================================
-   LINK UI MODEL
+   LINK MODEL
    ========================================================= */
 
 let linkCards = [];
@@ -191,7 +204,7 @@ function addNewLink() {
 if (addLinkBtn) addLinkBtn.onclick = addNewLink;
 
 /* =========================================================
-   Render link cards
+   Render links
    ========================================================= */
 
 function renderLinksUI() {
@@ -203,57 +216,60 @@ function renderLinksUI() {
   linkCards.forEach((item, index) => {
 
     const card = document.createElement("div");
-    card.className = "border border-zinc-800 rounded-lg p-4";
+    card.className =
+      "border border-zinc-800 rounded-xl p-4 bg-zinc-950/40";
 
     const title = index === 0 ? "Link" : `Link ${index + 1}`;
 
     card.innerHTML = `
-      <div class="flex items-center justify-between mb-2">
-        <div class="font-medium">${title}</div>
-        ${index === 0 ? "" : `<button class="removeBtn text-xs text-red-400 hover:underline">Remove</button>`}
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-medium">${title}</div>
+        ${index === 0 ? "" :
+          `<button class="removeBtn text-xs text-red-400 hover:text-red-300">Remove</button>`
+        }
       </div>
 
       <input
-        class="urlInput w-full mb-2 p-2 rounded bg-zinc-900 border border-zinc-800"
-        placeholder="Direct file URL (example: https://example.com/file.zip)"
+        class="urlInput w-full mb-3 p-2 rounded-lg bg-zinc-950 border border-zinc-800"
+        placeholder="Direct file URL (for example: https://example.com/build.zip)"
         value="${escapeHtml(item.url)}"
       >
 
-      <details class="mt-2">
-        <summary class="cursor-pointer text-sm text-zinc-400 select-none">
-          ▸ Advanced
+      <details class="group">
+        <summary class="cursor-pointer text-xs text-zinc-400 select-none">
+          Advanced options
         </summary>
 
-        <div class="mt-3 space-y-2">
+        <div class="mt-3 space-y-3">
 
           <input
-            class="folderInput w-full p-2 rounded bg-zinc-900 border border-zinc-800"
+            class="folderInput w-full p-2 rounded-lg bg-zinc-950 border border-zinc-800"
             placeholder="Target folder path (example: android/roms/14)"
             value="${escapeHtml(item.folder)}"
           >
 
           <div class="grid grid-cols-3 gap-2">
             <input
-              class="nameOnlyInput col-span-2 p-2 rounded bg-zinc-900 border border-zinc-800"
-              placeholder="New file name (without extension)"
+              class="nameOnlyInput col-span-2 p-2 rounded-lg bg-zinc-950 border border-zinc-800"
+              placeholder="Rename file (without extension)"
               value="${escapeHtml(item.nameOnly)}"
             >
 
             <input
-              class="extInput p-2 rounded bg-zinc-900 border border-zinc-800"
+              class="extInput p-2 rounded-lg bg-zinc-950 border border-zinc-800"
               placeholder="ext"
               value="${escapeHtml(item.ext)}"
               disabled
             >
           </div>
 
-          <label class="flex items-center gap-2 text-sm text-zinc-400">
-            <input type="checkbox" class="allowExtChk">
-            Allow extension change
+          <label class="flex items-center gap-2 text-xs text-zinc-400">
+            <input type="checkbox" class="allowExtChk accent-blue-500">
+            Allow manual extension change
           </label>
 
           <textarea
-            class="notesInput w-full p-2 rounded bg-zinc-900 border border-zinc-800 text-sm"
+            class="notesInput w-full p-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs"
             placeholder="Optional note for this file"
             rows="2"
           >${escapeHtml(item.notes)}</textarea>
@@ -311,7 +327,7 @@ function renderLinksUI() {
 addDefaultLink();
 
 /* =========================================================
-   Preview tree + conflict detection
+   Preview tree
    ========================================================= */
 
 function renderPreviewTree() {
@@ -329,9 +345,8 @@ function renderPreviewTree() {
 
     let baseName;
 
-    if (l.rename_base) {
-      baseName = l.rename_base;
-    } else {
+    if (l.rename_base) baseName = l.rename_base;
+    else {
       const dot = orig.lastIndexOf(".");
       baseName = dot !== -1 ? orig.slice(0, dot) : orig;
     }
@@ -339,10 +354,7 @@ function renderPreviewTree() {
     let finalName;
 
     if (compression.enabled) {
-
-      const ext = compression.type;
-      finalName = baseName + "." + ext.replace(/^.*\./,"");
-
+      finalName = baseName + "." + compression.type.replace(/^.*\./,"");
     } else {
 
       if (l.rename_base) {
@@ -353,10 +365,7 @@ function renderPreviewTree() {
           const ext2 = dot !== -1 ? orig.slice(dot) : "";
           finalName = l.rename_base + ext2;
         }
-      } else {
-        finalName = orig;
-      }
-
+      } else finalName = orig;
     }
 
     const folders = l.folder ? l.folder.split("/").filter(Boolean) : [];
@@ -381,21 +390,23 @@ function renderPreviewTree() {
   for (const p in pathCount)
     if (pathCount[p] > 1) conflicts.push(p);
 
-  let warnHtml = "";
-
-  if (conflicts.length) {
-    warnHtml = `
-      <div class="mb-3 p-3 rounded border border-red-500/40 bg-red-500/10 text-red-300 text-sm">
-        <div class="font-medium mb-1">⚠ Conflicting files detected</div>
-        <ul class="list-disc ml-5 space-y-1">
-          ${conflicts.map(p => `<li>${escapeHtml(p)}</li>`).join("")}
-        </ul>
-      </div>`;
-  }
-
   previewBox.innerHTML = `
-    <div class="font-medium mb-2">Final folder preview</div>
-    ${warnHtml}
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-sm font-semibold">Final output structure</div>
+      <span class="text-xs text-zinc-500">Preview</span>
+    </div>
+
+    ${
+      conflicts.length
+      ? `<div class="mb-3 p-3 rounded-lg border border-red-500/40 bg-red-500/10 text-red-300 text-xs">
+           <div class="font-medium mb-1">Conflicting file paths detected</div>
+           <ul class="list-disc ml-5 space-y-1">
+             ${conflicts.map(p => `<li>${escapeHtml(p)}</li>`).join("")}
+           </ul>
+         </div>`
+      : ""
+    }
+
     ${renderTreeHTML(tree, pathCount, "")}
   `;
 }
@@ -404,7 +415,7 @@ function renderTreeHTML(tree, pathCount, basePath) {
 
   function walk(obj, parentPath) {
 
-    let html = "<ul class='ml-4 mt-1 space-y-1 text-sm'>";
+    let html = "<ul class='ml-4 mt-1 space-y-1 text-xs'>";
 
     for (const k of Object.keys(obj).sort()) {
 
@@ -415,16 +426,16 @@ function renderTreeHTML(tree, pathCount, basePath) {
         const full = "SourceMirror/" + currentPath;
         const dup = pathCount[full] > 1;
 
-        html += `<li class="flex items-center gap-2 ${dup ? "text-red-400" : ""}">
-          📄 ${escapeHtml(k)} ${dup ? "⚠" : ""}
+        html += `<li class="flex items-center gap-2 ${dup ? "text-red-400" : "text-zinc-300"}">
+          ${escapeHtml(k)} ${dup ? "⚠" : ""}
         </li>`;
 
       } else {
 
         html += `<li>
           <details open>
-            <summary class="cursor-pointer flex items-center gap-2">
-              📁 ${escapeHtml(k)}
+            <summary class="cursor-pointer flex items-center gap-2 text-zinc-200">
+              ${escapeHtml(k)}
             </summary>
             ${walk(obj[k], currentPath)}
           </details>
@@ -438,8 +449,8 @@ function renderTreeHTML(tree, pathCount, basePath) {
 
   return `
     <details open>
-      <summary class="cursor-pointer flex items-center gap-2">
-        📁 SourceMirror
+      <summary class="cursor-pointer flex items-center gap-2 text-zinc-200">
+        SourceMirror
       </summary>
       ${walk(tree, basePath)}
     </details>
@@ -447,15 +458,14 @@ function renderTreeHTML(tree, pathCount, basePath) {
 }
 
 /* =========================================================
-   Start
+   Start job
    ========================================================= */
 
 btn.onclick = async () => {
 
   const links = collectLinksFromUI();
-
   if (!links.length) {
-    alert("Please add at least one valid link");
+    alert("Please add at least one valid file URL.");
     return;
   }
 
@@ -465,7 +475,7 @@ btn.onclick = async () => {
   currentJobId = jobId;
 
   btn.disabled = true;
-  btn.textContent = "Processing…";
+  btn.textContent = "Starting…";
 
   const r = await fetch(WORKER_URL, {
     method: "POST",
@@ -481,9 +491,9 @@ btn.onclick = async () => {
   const data = await r.json().catch(() => null);
 
   if (!data || !data.ok || !data.run_id) {
-    alert("Failed to start job");
+    alert("Failed to start mirroring job.");
     btn.disabled = false;
-    btn.textContent = "Start mirroring";
+    btn.textContent = "Mirror to SourceForge";
     return;
   }
 
@@ -494,7 +504,6 @@ btn.onclick = async () => {
   jobStatus.textContent = "Queued";
 
   filesArea.innerHTML = "";
-
   links.forEach(l =>
     filesArea.appendChild(renderFileCard(fileNameFromUrl(l.url)))
   );
@@ -537,26 +546,54 @@ function collectLinksFromUI() {
 }
 
 /* =========================================================
-   Polling + results
+   Job UI
    ========================================================= */
 
 function renderFileCard(name) {
 
   const div = document.createElement("div");
-  div.className = "border border-zinc-800 rounded-lg p-4";
+
+  div.className =
+    "border border-zinc-800 rounded-xl p-4 bg-zinc-950/40";
 
   div.innerHTML = `
-    <div class="font-medium mb-2">${escapeHtml(name)}</div>
-    <div class="space-y-1 text-sm stage-ui">
+    <div class="font-medium mb-2 text-sm">${escapeHtml(name)}</div>
+
+    <div class="space-y-1 text-xs stage-ui">
       <div>● Validating</div>
       <div>○ Downloading</div>
-      <div>○ Uploading to Mirror</div>
+      <div>○ Uploading to SourceMirror</div>
       <div>○ Verifying</div>
       <div>○ Finished</div>
     </div>
   `;
 
   return div;
+}
+
+function renderResultFiles(files) {
+
+  filesArea.innerHTML = "";
+
+  files.forEach(f => {
+
+    const row = document.createElement("div");
+    row.className =
+      "border border-zinc-800 rounded-xl p-3 text-xs flex items-center justify-between gap-3 bg-zinc-950/40";
+
+    row.innerHTML = `
+      <div>
+        <div class="font-medium">
+          ${escapeHtml(f.final || f.original || "")}
+        </div>
+        <div class="${f.status === "failed" ? "text-red-400" : "text-emerald-400"}">
+          ${escapeHtml(f.status || "")}
+        </div>
+      </div>
+    `;
+
+    filesArea.appendChild(row);
+  });
 }
 
 function startPolling(runId, jobId) {
@@ -585,9 +622,10 @@ function startPolling(runId, jobId) {
 
       clearInterval(pollingTimer);
       btn.disabled = false;
-      btn.textContent = "Start mirroring";
+      btn.textContent = "Mirror to SourceForge";
 
-      if (Array.isArray(data.files)) renderResultFiles(data.files);
+      if (Array.isArray(data.files))
+        renderResultFiles(data.files);
 
       loadHistory();
     }
@@ -596,7 +634,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History loader
+   History
    ========================================================= */
 
 async function loadHistory() {
@@ -616,12 +654,12 @@ async function loadHistory() {
 
       const row = document.createElement("div");
       row.className =
-        "cursor-pointer p-2 rounded hover:bg-zinc-800";
+        "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition";
 
       row.innerHTML = `
         <div class="font-medium">${escapeHtml(h.job_id)}</div>
         <div class="text-xs text-zinc-400">
-          ${escapeHtml(h.status)} – ${h.time}
+          ${escapeHtml(h.status)} · ${h.time}
         </div>
       `;
 
@@ -631,7 +669,7 @@ async function loadHistory() {
     });
 
   } catch {
-    list.textContent = "History not available yet";
+    list.textContent = "History is not available yet.";
   }
 }
 
@@ -648,7 +686,7 @@ async function openHistoryJob(jobId, runId) {
 }
 
 /* =========================================================
-   Helpers
+   Stage UI
    ========================================================= */
 
 function updateStage(stage) {
@@ -656,8 +694,11 @@ function updateStage(stage) {
   const map = { validating:0, downloading:1, uploading:2, verifying:3, finished:4 };
 
   const activeColors = {
-    validating:"#facc15", downloading:"#60a5fa",
-    uploading:"#c084fc", verifying:"#fb923c", finished:"#34d399"
+    validating:"#facc15",
+    downloading:"#60a5fa",
+    uploading:"#c084fc",
+    verifying:"#fb923c",
+    finished:"#34d399"
   };
 
   const completedColor = "#34d399";
@@ -688,6 +729,10 @@ function updateStage(stage) {
     });
   });
 }
+
+/* =========================================================
+   Helpers
+   ========================================================= */
 
 function fileNameFromUrl(u) {
   try { return new URL(u).pathname.split("/").pop() || "file"; }
