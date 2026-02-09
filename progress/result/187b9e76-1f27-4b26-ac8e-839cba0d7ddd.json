@@ -1,0 +1,17 @@
+{
+  "files": [
+    {
+      "original": "m",
+      "final": "m",
+      "folder": "",
+      "status": "ok",
+      "size": 123456
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_size": 123456,
+    "time_taken": 242
+  },
+  "notes": ""
+}
