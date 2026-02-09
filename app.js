@@ -32,6 +32,76 @@ if (!previewBox) {
 }
 
 /* =========================================================
+   Compression panel
+   ========================================================= */
+
+let compressionBox = document.getElementById("compressionBox");
+
+if (!compressionBox) {
+
+  compressionBox = document.createElement("div");
+  compressionBox.id = "compressionBox";
+  compressionBox.className =
+    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
+
+  compressionBox.innerHTML = `
+    <div class="font-medium mb-2">Compression (optional)</div>
+
+    <label class="flex items-center gap-2 text-sm text-zinc-400 mb-3">
+      <input type="checkbox" id="compressEnable">
+      Enable compression before upload
+    </label>
+
+    <div class="grid grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Compression level</label>
+        <select id="compressLevel"
+          class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
+          <option value="fast">Fast</option>
+          <option value="normal" selected>Normal</option>
+          <option value="maximum">Maximum</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Compression type</label>
+        <select id="compressType"
+          class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
+          <option value="zip">.zip</option>
+          <option value="7z">.7z</option>
+          <option value="tar.gz">.tar.gz</option>
+        </select>
+      </div>
+    </div>
+  `;
+
+  previewBox.after(compressionBox);
+}
+
+/* =========================================================
+   Mirror history panel
+   ========================================================= */
+
+let historyBox = document.getElementById("historyBox");
+
+if (!historyBox) {
+
+  historyBox = document.createElement("div");
+  historyBox.id = "historyBox";
+  historyBox.className =
+    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
+
+  historyBox.innerHTML = `
+    <div class="font-medium mb-2">Recent mirror history</div>
+    <div id="historyList" class="space-y-2 text-sm text-zinc-300">
+      Loading…
+    </div>
+  `;
+
+  compressionBox.after(historyBox);
+}
+
+/* =========================================================
    LINK UI MODEL
    ========================================================= */
 
@@ -81,11 +151,7 @@ function renderLinksUI() {
     card.innerHTML = `
       <div class="flex items-center justify-between mb-2">
         <div class="font-medium">${title}</div>
-        ${
-          index === 0
-            ? ""
-            : `<button class="removeBtn text-xs text-red-400 hover:underline">Remove</button>`
-        }
+        ${index === 0 ? "" : `<button class="removeBtn text-xs text-red-400 hover:underline">Remove</button>`}
       </div>
 
       <input
@@ -103,7 +169,7 @@ function renderLinksUI() {
 
           <input
             class="folderInput w-full p-2 rounded bg-zinc-900 border border-zinc-800"
-            placeholder="Folder path (ex: Create Your Own Folder)"
+            placeholder="Folder path"
             value="${escapeHtml(item.folder)}"
           >
 
@@ -116,7 +182,7 @@ function renderLinksUI() {
 
             <input
               class="extInput p-2 rounded bg-zinc-900 border border-zinc-800"
-              placeholder="ext (zip/exe/mp4/apk)"
+              placeholder="ext"
               value="${escapeHtml(item.ext)}"
               disabled
             >
@@ -137,15 +203,15 @@ function renderLinksUI() {
       </details>
     `;
 
-    const urlInput   = card.querySelector(".urlInput");
-    const folderIn   = card.querySelector(".folderInput");
-    const nameIn     = card.querySelector(".nameOnlyInput");
-    const extIn      = card.querySelector(".extInput");
-    const allowChk   = card.querySelector(".allowExtChk");
-    const notesIn    = card.querySelector(".notesInput");
+    const urlInput = card.querySelector(".urlInput");
+    const folderIn = card.querySelector(".folderInput");
+    const nameIn   = card.querySelector(".nameOnlyInput");
+    const extIn    = card.querySelector(".extInput");
+    const allowChk = card.querySelector(".allowExtChk");
+    const notesIn  = card.querySelector(".notesInput");
 
     allowChk.checked = item.allow_ext;
-    extIn.disabled   = !item.allow_ext;
+    extIn.disabled = !item.allow_ext;
 
     urlInput.oninput = e => { item.url = e.target.value; renderPreviewTree(); };
     folderIn.oninput = e => { item.folder = e.target.value; renderPreviewTree(); };
@@ -163,15 +229,9 @@ function renderLinksUI() {
     const rm = card.querySelector(".removeBtn");
     if (rm) {
       rm.onclick = () => {
-
         linkCards.splice(index, 1);
-
-        if (linkCards.length === 0) {
-          addDefaultLink();
-          return;
-        }
-
-        renderLinksUI();
+        if (!linkCards.length) addDefaultLink();
+        else renderLinksUI();
       };
     }
 
@@ -184,7 +244,7 @@ function renderLinksUI() {
 addDefaultLink();
 
 /* =========================================================
-   Build preview tree + conflict detection
+   Preview tree + conflict detection
    ========================================================= */
 
 function renderPreviewTree() {
@@ -198,22 +258,19 @@ function renderPreviewTree() {
   for (const l of links) {
 
     const orig = fileNameFromUrl(l.url);
-
     let finalName = orig;
 
     if (l.rename_base) {
-      if (l.allow_ext && l.rename_ext) {
+      if (l.allow_ext && l.rename_ext)
         finalName = l.rename_base + "." + l.rename_ext;
-      } else {
+      else {
         const dot = orig.lastIndexOf(".");
         const ext = dot !== -1 ? orig.slice(dot) : "";
         finalName = l.rename_base + ext;
       }
     }
 
-    const folders = l.folder
-      ? l.folder.split("/").filter(Boolean)
-      : [];
+    const folders = l.folder ? l.folder.split("/").filter(Boolean) : [];
 
     const fullPath =
       "SourceMirror/" +
@@ -232,9 +289,8 @@ function renderPreviewTree() {
     node[finalName] = null;
   }
 
-  for (const p in pathCount) {
+  for (const p in pathCount)
     if (pathCount[p] > 1) conflicts.push(p);
-  }
 
   let warnHtml = "";
 
@@ -245,8 +301,7 @@ function renderPreviewTree() {
         <ul class="list-disc ml-5 space-y-1">
           ${conflicts.map(p => `<li>${escapeHtml(p)}</li>`).join("")}
         </ul>
-      </div>
-    `;
+      </div>`;
   }
 
   previewBox.innerHTML = `
@@ -268,29 +323,23 @@ function renderTreeHTML(tree, pathCount, basePath) {
 
       if (obj[k] === null) {
 
-        const full =
-          "SourceMirror/" + currentPath;
-
+        const full = "SourceMirror/" + currentPath;
         const dup = pathCount[full] > 1;
 
-        html += `
-          <li class="flex items-center gap-2 ${dup ? "text-red-400" : ""}">
-            📄 ${escapeHtml(k)} ${dup ? "⚠" : ""}
-          </li>
-        `;
+        html += `<li class="flex items-center gap-2 ${dup ? "text-red-400" : ""}">
+          📄 ${escapeHtml(k)} ${dup ? "⚠" : ""}
+        </li>`;
 
       } else {
 
-        html += `
-          <li>
-            <details open>
-              <summary class="cursor-pointer flex items-center gap-2">
-                📁 ${escapeHtml(k)}
-              </summary>
-              ${walk(obj[k], currentPath)}
-            </details>
-          </li>
-        `;
+        html += `<li>
+          <details open>
+            <summary class="cursor-pointer flex items-center gap-2">
+              📁 ${escapeHtml(k)}
+            </summary>
+            ${walk(obj[k], currentPath)}
+          </details>
+        </li>`;
       }
     }
 
@@ -309,7 +358,7 @@ function renderTreeHTML(tree, pathCount, basePath) {
 }
 
 /* =========================================================
-   Start button
+   Start
    ========================================================= */
 
 btn.onclick = async () => {
@@ -320,6 +369,12 @@ btn.onclick = async () => {
     alert("Please add at least one valid link");
     return;
   }
+
+  const compression = {
+    enabled: document.getElementById("compressEnable").checked,
+    level:   document.getElementById("compressLevel").value,
+    type:    document.getElementById("compressType").value
+  };
 
   const jobId = crypto.randomUUID();
   currentJobId = jobId;
@@ -333,7 +388,8 @@ btn.onclick = async () => {
     body: JSON.stringify({
       job_id: jobId,
       links,
-      notes: jobNotes.value || ""
+      notes: jobNotes.value || "",
+      compression
     })
   });
 
@@ -354,9 +410,9 @@ btn.onclick = async () => {
 
   filesArea.innerHTML = "";
 
-  links.forEach(l => {
-    filesArea.appendChild(renderFileCard(fileNameFromUrl(l.url)));
-  });
+  links.forEach(l =>
+    filesArea.appendChild(renderFileCard(fileNameFromUrl(l.url)))
+  );
 
   lastStageIndex = -1;
   startPolling(currentRunId, currentJobId);
@@ -377,11 +433,8 @@ function collectLinksFromUI() {
     let rename = "";
 
     if (l.nameOnly) {
-      if (l.allow_ext && l.ext) {
-        rename = l.nameOnly + "." + l.ext;
-      } else {
-        rename = l.nameOnly;
-      }
+      if (l.allow_ext && l.ext) rename = l.nameOnly + "." + l.ext;
+      else rename = l.nameOnly;
     }
 
     out.push({
@@ -399,13 +452,12 @@ function collectLinksFromUI() {
 }
 
 /* =========================================================
-   Stage cards
+   Polling + results (unchanged)
    ========================================================= */
 
 function renderFileCard(name) {
 
   const div = document.createElement("div");
-
   div.className = "border border-zinc-800 rounded-lg p-4";
 
   div.innerHTML = `
@@ -421,10 +473,6 @@ function renderFileCard(name) {
 
   return div;
 }
-
-/* =========================================================
-   Polling
-   ========================================================= */
 
 function startPolling(runId, jobId) {
 
@@ -451,117 +499,80 @@ function startPolling(runId, jobId) {
     if (data.status === "completed") {
 
       clearInterval(pollingTimer);
-
       btn.disabled = false;
       btn.textContent = "Start mirroring";
 
       if (Array.isArray(data.files)) renderResultFiles(data.files);
+
+      loadHistory();
     }
 
   }, 1000);
 }
 
 /* =========================================================
-   Result + retry UI
+   History loader (last 10)
    ========================================================= */
 
-function renderResultFiles(files) {
+async function loadHistory() {
 
-  filesArea.innerHTML = "";
+  const list = document.getElementById("historyList");
 
-  files.forEach(f => {
+  try {
 
-    const row = document.createElement("div");
-    row.className =
-      "border border-zinc-800 rounded-lg p-3 text-sm flex items-center justify-between gap-3";
+    const r = await fetch(WORKER_URL + "/history");
+    if (!r.ok) throw 0;
 
-    const left = document.createElement("div");
+    const arr = await r.json();
 
-    left.innerHTML = `
-      <div class="font-medium">
-        ${escapeHtml(f.final || f.original || "")}
-      </div>
-      <div class="text-xs ${f.status === "failed" ? "text-red-400" : "text-green-400"}">
-        ${escapeHtml(f.status || "unknown")}
-      </div>
-    `;
+    list.innerHTML = "";
 
-    const right = document.createElement("div");
+    arr.slice(0,10).forEach(h => {
 
-    if (f.status === "failed") {
+      const row = document.createElement("div");
+      row.className =
+        "cursor-pointer p-2 rounded hover:bg-zinc-800";
 
-      const btnRetry = document.createElement("button");
-      btnRetry.textContent = "Retry";
-      btnRetry.className =
-        "px-3 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-xs";
+      row.innerHTML = `
+        <div class="font-medium">${escapeHtml(h.job_id)}</div>
+        <div class="text-xs text-zinc-400">
+          ${escapeHtml(h.status)} – ${h.time}
+        </div>
+      `;
 
-      btnRetry.onclick = async () => {
-        btnRetry.disabled = true;
-        btnRetry.textContent = "Retrying…";
-        await triggerRetry([f.final || f.original]);
-      };
+      row.onclick = () => openHistoryJob(h.job_id, h.run_id);
 
-      right.appendChild(btnRetry);
-    }
+      list.appendChild(row);
+    });
 
-    row.appendChild(left);
-    row.appendChild(right);
-    filesArea.appendChild(row);
-  });
-}
-
-/* =========================================================
-   Retry
-   ========================================================= */
-
-async function triggerRetry(fileList) {
-
-  if (!currentJobId) return;
-
-  const r = await fetch(WORKER_URL + "/retry", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      job_id: currentJobId,
-      files: fileList
-    })
-  });
-
-  const data = await r.json().catch(() => null);
-
-  if (!r.ok || !data || !data.ok) {
-    alert("Retry failed to start");
-    return;
+  } catch {
+    list.textContent = "History not available yet";
   }
+}
 
-  btn.disabled = true;
-  btn.textContent = "Processing…";
-  jobStatus.textContent = "retrying";
+async function openHistoryJob(jobId, runId) {
+
+  currentJobId = jobId;
+  currentRunId = runId;
+
+  jobBox.classList.remove("hidden");
+  jobIdEl.textContent = jobId;
+
   lastStageIndex = -1;
-
-  startPolling(currentRunId, currentJobId);
+  startPolling(runId, jobId);
 }
 
 /* =========================================================
-   Stage UI
+   Helpers
    ========================================================= */
 
 function updateStage(stage) {
 
-  const map = {
-    validating: 0,
-    downloading: 1,
-    uploading: 2,
-    verifying: 3,
-    finished: 4
-  };
+  const map = { validating:0, downloading:1, uploading:2, verifying:3, finished:4 };
 
   const activeColors = {
-    validating:  "#facc15",
-    downloading: "#60a5fa",
-    uploading:   "#c084fc",
-    verifying:   "#fb923c",
-    finished:    "#34d399"
+    validating:"#facc15", downloading:"#60a5fa",
+    uploading:"#c084fc", verifying:"#fb923c", finished:"#34d399"
   };
 
   const completedColor = "#34d399";
@@ -576,50 +587,30 @@ function updateStage(stage) {
   document.querySelectorAll("#filesArea > div").forEach(card => {
 
     const rows = card.querySelectorAll(".stage-ui > div");
-    if (!rows.length) return;
 
     rows.forEach((row, i) => {
 
       if (i < incomingIndex) {
         row.style.color = completedColor;
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "✔");
-        return;
-      }
-
-      if (i === incomingIndex) {
+      } else if (i === incomingIndex) {
         row.style.color = activeColors[stage] || "#60a5fa";
         row.textContent = row.textContent.replace(/^●|^○|^✔/, "●");
-        return;
+      } else {
+        row.style.color = pendingColor;
+        row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
       }
-
-      row.style.color = pendingColor;
-      row.textContent = row.textContent.replace(/^●|^○|^✔/, "○");
-
     });
-
   });
 }
 
-/* =========================================================
-   Helpers
-   ========================================================= */
-
 function fileNameFromUrl(u) {
-  try {
-    const p = new URL(u).pathname;
-    const b = p.split("/").pop();
-    return b || "file";
-  } catch {
-    return "file";
-  }
+  try { return new URL(u).pathname.split("/").pop() || "file"; }
+  catch { return "file"; }
 }
 
 function escapeHtml(s) {
-  return String(s || "").replace(/[&<>"']/g, m => ({
-    "&":"&amp;",
-    "<":"&lt;",
-    ">":"&gt;",
-    "\"":"&quot;",
-    "'":"&#039;"
+  return String(s||"").replace(/[&<>"']/g,m=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
   }[m]));
 }
