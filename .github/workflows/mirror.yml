@@ -7,23 +7,24 @@ on:
         required: true
         type: string
 
-      # old simple mode
       urls:
         required: false
         type: string
 
-      # new advanced mode
       links:
         required: false
         type: string
 
-      # notes
       notes:
         required: false
         type: string
 
-      # retry mode
       retry_files:
+        required: false
+        type: string
+
+      # new – compression object (JSON string)
+      compression:
         required: false
         type: string
 
@@ -63,7 +64,7 @@ jobs:
           fi
 
       # --------------------------------------------------
-      # record job start time   (MUST be after checkout progress)
+      # record job start time
       # --------------------------------------------------
       - name: Record job start time
         run: |
@@ -82,6 +83,26 @@ jobs:
           links = os.environ.get("LINKS")
           urls  = os.environ.get("URLS")
           retry = os.environ.get("RETRY")
+          compression_raw = os.environ.get("COMPRESSION")
+
+          compression = None
+          if compression_raw:
+              try:
+                  compression = json.loads(compression_raw)
+              except:
+                  compression = None
+
+          def archive_ext(t):
+              return {
+                  "zip": "zip",
+                  "7z": "7z",
+                  "tar.gz": "tar.gz",
+                  "tar.bz2": "tar.bz2",
+                  "tar.xz": "tar.xz",
+                  "gz": "gz",
+                  "bz2": "bz2",
+                  "xz": "xz"
+              }.get(t, "zip")
 
           files = []
 
@@ -93,46 +114,71 @@ jobs:
                       "original": f,
                       "final": f,
                       "folder": "",
+                      "notes": "",
                       "status": "retry"
                   })
 
           # advanced mode
           elif links:
               arr = json.loads(links)
+
               for x in arr:
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
-                  final = x.get("rename") or name
+
+                  base = x.get("rename_base") or x.get("rename") or name
                   folder = x.get("folder") or ""
+                  notes  = x.get("notes") or ""
+
+                  final = name
+
+                  if compression and compression.get("enabled"):
+                      t = compression.get("type","zip")
+                      ext = archive_ext(t)
+                      final = base + "." + ext
+                  else:
+                      r = x.get("rename")
+                      if r:
+                          final = r
+                      else:
+                          final = name
+
                   files.append({
                       "original": name,
                       "final": final,
                       "folder": folder,
+                      "notes": notes,
                       "status": "pending"
                   })
 
-          # old mode
+          # old urls mode
           elif urls:
               for u in urls.splitlines():
                   u = u.strip()
                   if not u:
                       continue
+
                   name = u.split("/")[-1] or "file"
                   files.append({
                       "original": name,
                       "final": name,
                       "folder": "",
+                      "notes": "",
                       "status": "pending"
                   })
 
           with open("work/files.json","w") as f:
-              json.dump(files,f,indent=2)
+              json.dump({
+                  "compression": compression,
+                  "files": files
+              }, f, indent=2)
 
           EOF
         env:
           LINKS: ${{ inputs.links }}
           URLS:  ${{ inputs.urls }}
           RETRY: ${{ inputs.retry_files }}
+          COMPRESSION: ${{ inputs.compression }}
 
       # -----------------------------
       # validating
@@ -144,7 +190,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 60
+          sleep 20
 
       # -----------------------------
       # downloading
@@ -155,7 +201,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 60
+          sleep 20
 
       # -----------------------------
       # uploading
@@ -166,7 +212,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 60
+          sleep 20
 
       # -----------------------------
       # verifying
@@ -177,7 +223,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 60
+          sleep 20
 
       # --------------------------------------------------
       # produce result + summary
@@ -193,7 +239,10 @@ jobs:
               start = int(f.read().strip())
 
           with open("work/files.json") as f:
-              files = json.load(f)
+              data = json.load(f)
+
+          files = data.get("files", [])
+          compression = data.get("compression")
 
           for fobj in files:
               if "fail" in fobj["final"].lower():
@@ -209,15 +258,14 @@ jobs:
           summary = {
               "total_files": total_files,
               "total_size": total_size,
-              "time_taken": int(time.time() - start)
+              "time_taken": int(time.time() - start),
+              "compression": compression
           }
-
-          notes = os.environ.get("NOTES","")
 
           out = {
               "files": files,
               "summary": summary,
-              "notes": notes
+              "notes": os.environ.get("NOTES","")
           }
 
           with open("progress/result/${{ inputs.job_id }}.json","w") as f:
@@ -232,7 +280,7 @@ jobs:
           NOTES: ${{ inputs.notes }}
 
       # -----------------------------
-      # finished (always)
+      # finished
       # -----------------------------
       - name: Stage – finished
         if: always()
