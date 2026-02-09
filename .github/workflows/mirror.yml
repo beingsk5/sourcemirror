@@ -23,7 +23,6 @@ on:
         required: false
         type: string
 
-      # new – compression object (JSON string)
       compression:
         required: false
         type: string
@@ -130,18 +129,13 @@ jobs:
                   folder = x.get("folder") or ""
                   notes  = x.get("notes") or ""
 
-                  final = name
-
                   if compression and compression.get("enabled"):
                       t = compression.get("type","zip")
                       ext = archive_ext(t)
                       final = base + "." + ext
                   else:
                       r = x.get("rename")
-                      if r:
-                          final = r
-                      else:
-                          final = name
+                      final = r if r else name
 
                   files.append({
                       "original": name,
@@ -157,7 +151,6 @@ jobs:
                   u = u.strip()
                   if not u:
                       continue
-
                   name = u.split("/")[-1] or "file"
                   files.append({
                       "original": name,
@@ -278,6 +271,54 @@ jobs:
           git push origin progress
         env:
           NOTES: ${{ inputs.notes }}
+
+      # --------------------------------------------------
+      # update mirror history
+      # --------------------------------------------------
+      - name: Update mirror history
+        if: always()
+        run: |
+          mkdir -p progress
+
+          python3 << 'EOF'
+          import json, os, time
+
+          path = "progress/history.json"
+
+          job_id = os.environ.get("JOB_ID")
+          run_id = os.environ.get("RUN_ID")
+
+          now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+
+          entry = {
+              "job_id": job_id,
+              "run_id": run_id,
+              "status": "completed",
+              "time": now
+          }
+
+          try:
+              with open(path) as f:
+                  arr = json.load(f)
+                  if not isinstance(arr, list):
+                      arr = []
+          except:
+              arr = []
+
+          arr.insert(0, entry)
+          arr = arr[:20]
+
+          with open(path, "w") as f:
+              json.dump(arr, f, indent=2)
+
+          EOF
+
+          git add progress/history.json
+          git commit -m "history update ${{ inputs.job_id }}" || true
+          git push origin progress
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          RUN_ID: ${{ github.run_id }}
 
       # -----------------------------
       # finished
