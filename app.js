@@ -17,18 +17,15 @@ let currentRunId = null;
 let pollingTimer = null;
 
 /* =========================================================
-   Preview panel (auto injected)
+   Compression helpers
    ========================================================= */
 
-let previewBox = document.getElementById("previewBox");
-
-if (!previewBox) {
-  previewBox = document.createElement("div");
-  previewBox.id = "previewBox";
-  previewBox.className =
-    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
-
-  linksArea.parentElement.appendChild(previewBox);
+function getCompressionState() {
+  return {
+    enabled: document.getElementById("compressEnable")?.checked || false,
+    level:   document.getElementById("compressLevel")?.value || "mid",
+    type:    document.getElementById("compressType")?.value || "zip"
+  };
 }
 
 /* =========================================================
@@ -47,35 +44,67 @@ if (!compressionBox) {
   compressionBox.innerHTML = `
     <div class="font-medium mb-2">Compression (optional)</div>
 
-    <label class="flex items-center gap-2 text-sm text-zinc-400 mb-3">
+    <label class="flex items-center gap-2 text-sm text-zinc-300 mb-3">
       <input type="checkbox" id="compressEnable">
-      Enable compression before upload
+      Compress files before uploading to SourceForge
     </label>
 
-    <div class="grid grid-cols-2 gap-3">
+    <div class="grid grid-cols-2 gap-3 mb-3">
+
       <div>
-        <label class="block text-xs text-zinc-400 mb-1">Compression level</label>
+        <label class="block text-xs text-zinc-400 mb-1">
+          Compression level
+        </label>
         <select id="compressLevel"
           class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
-          <option value="fast">Fast</option>
-          <option value="normal" selected>Normal</option>
-          <option value="maximum">Maximum</option>
+          <option value="store">Store (no compression, fastest)</option>
+          <option value="low">Low (very fast)</option>
+          <option value="mid" selected>Balanced</option>
+          <option value="high">High compression</option>
+          <option value="ultra">Ultra (slowest, smallest size)</option>
         </select>
       </div>
 
       <div>
-        <label class="block text-xs text-zinc-400 mb-1">Compression type</label>
+        <label class="block text-xs text-zinc-400 mb-1">
+          Archive format
+        </label>
         <select id="compressType"
           class="w-full p-2 rounded bg-zinc-900 border border-zinc-800">
-          <option value="zip">.zip</option>
-          <option value="7z">.7z</option>
-          <option value="tar.gz">.tar.gz</option>
+          <option value="zip">ZIP (.zip)</option>
+          <option value="7z">7-Zip (.7z)</option>
+          <option value="tar.gz">TAR + GZip (.tar.gz)</option>
+          <option value="tar.bz2">TAR + BZip2 (.tar.bz2)</option>
+          <option value="tar.xz">TAR + XZ (.tar.xz)</option>
+          <option value="gz">GZip single file (.gz)</option>
+          <option value="bz2">BZip2 single file (.bz2)</option>
+          <option value="xz">XZ single file (.xz)</option>
         </select>
       </div>
+
+    </div>
+
+    <div id="compressionNote"
+      class="hidden text-sm text-yellow-300 border border-yellow-500/30 bg-yellow-500/10 rounded p-3">
+      When compression is enabled, only the generated archive will be uploaded.
+      Original files will not be uploaded separately.
+      File renaming is supported, but manual extension changes are disabled
+      because the selected archive format determines the final file extension.
     </div>
   `;
+}
 
-  previewBox.after(compressionBox);
+/* =========================================================
+   Preview panel
+   ========================================================= */
+
+let previewBox = document.getElementById("previewBox");
+
+if (!previewBox) {
+  previewBox = document.createElement("div");
+  previewBox.id = "previewBox";
+  previewBox.className =
+    "mt-6 bg-zinc-900 border border-zinc-800 rounded-xl p-4";
 }
 
 /* =========================================================
@@ -97,9 +126,37 @@ if (!historyBox) {
       Loading…
     </div>
   `;
-
-  compressionBox.after(historyBox);
 }
+
+/* =========================================================
+   Place panels in required order
+   ========================================================= */
+
+const container = linksArea.parentElement;
+
+if (!compressionBox.parentElement) {
+  container.insertBefore(compressionBox, jobNotes.parentElement);
+}
+
+if (!previewBox.parentElement) {
+  container.insertBefore(previewBox, jobNotes.parentElement);
+}
+
+if (!historyBox.parentElement) {
+  container.insertBefore(historyBox, jobNotes.parentElement);
+}
+
+/* =========================================================
+   Compression change reactions
+   ========================================================= */
+
+["compressEnable","compressLevel","compressType"].forEach(id=>{
+  compressionBox.querySelector("#"+id).addEventListener("change", ()=>{
+    const note = document.getElementById("compressionNote");
+    note.classList.toggle("hidden", !getCompressionState().enabled);
+    renderLinksUI();
+  });
+});
 
 /* =========================================================
    LINK UI MODEL
@@ -141,6 +198,8 @@ function renderLinksUI() {
 
   linksArea.innerHTML = "";
 
+  const compression = getCompressionState();
+
   linkCards.forEach((item, index) => {
 
     const card = document.createElement("div");
@@ -156,7 +215,7 @@ function renderLinksUI() {
 
       <input
         class="urlInput w-full mb-2 p-2 rounded bg-zinc-900 border border-zinc-800"
-        placeholder="File URL"
+        placeholder="Direct file URL (example: https://example.com/file.zip)"
         value="${escapeHtml(item.url)}"
       >
 
@@ -169,14 +228,14 @@ function renderLinksUI() {
 
           <input
             class="folderInput w-full p-2 rounded bg-zinc-900 border border-zinc-800"
-            placeholder="Folder path"
+            placeholder="Target folder path (example: android/roms/14)"
             value="${escapeHtml(item.folder)}"
           >
 
           <div class="grid grid-cols-3 gap-2">
             <input
               class="nameOnlyInput col-span-2 p-2 rounded bg-zinc-900 border border-zinc-800"
-              placeholder="File name (without extension)"
+              placeholder="New file name (without extension)"
               value="${escapeHtml(item.nameOnly)}"
             >
 
@@ -195,7 +254,7 @@ function renderLinksUI() {
 
           <textarea
             class="notesInput w-full p-2 rounded bg-zinc-900 border border-zinc-800 text-sm"
-            placeholder="Notes (optional)"
+            placeholder="Optional note for this file"
             rows="2"
           >${escapeHtml(item.notes)}</textarea>
 
@@ -210,8 +269,16 @@ function renderLinksUI() {
     const allowChk = card.querySelector(".allowExtChk");
     const notesIn  = card.querySelector(".notesInput");
 
-    allowChk.checked = item.allow_ext;
-    extIn.disabled = !item.allow_ext;
+    if (compression.enabled) {
+      allowChk.checked = false;
+      allowChk.disabled = true;
+      extIn.disabled = true;
+      item.allow_ext = false;
+    } else {
+      allowChk.disabled = false;
+      allowChk.checked = item.allow_ext;
+      extIn.disabled = !item.allow_ext;
+    }
 
     urlInput.oninput = e => { item.url = e.target.value; renderPreviewTree(); };
     folderIn.oninput = e => { item.folder = e.target.value; renderPreviewTree(); };
@@ -250,6 +317,7 @@ addDefaultLink();
 function renderPreviewTree() {
 
   const links = collectLinksFromUI();
+  const compression = getCompressionState();
 
   const tree = {};
   const pathCount = {};
@@ -258,16 +326,37 @@ function renderPreviewTree() {
   for (const l of links) {
 
     const orig = fileNameFromUrl(l.url);
-    let finalName = orig;
+
+    let baseName;
 
     if (l.rename_base) {
-      if (l.allow_ext && l.rename_ext)
-        finalName = l.rename_base + "." + l.rename_ext;
-      else {
-        const dot = orig.lastIndexOf(".");
-        const ext = dot !== -1 ? orig.slice(dot) : "";
-        finalName = l.rename_base + ext;
+      baseName = l.rename_base;
+    } else {
+      const dot = orig.lastIndexOf(".");
+      baseName = dot !== -1 ? orig.slice(0, dot) : orig;
+    }
+
+    let finalName;
+
+    if (compression.enabled) {
+
+      const ext = compression.type;
+      finalName = baseName + "." + ext.replace(/^.*\./,"");
+
+    } else {
+
+      if (l.rename_base) {
+        if (l.allow_ext && l.rename_ext)
+          finalName = l.rename_base + "." + l.rename_ext;
+        else {
+          const dot = orig.lastIndexOf(".");
+          const ext2 = dot !== -1 ? orig.slice(dot) : "";
+          finalName = l.rename_base + ext2;
+        }
+      } else {
+        finalName = orig;
       }
+
     }
 
     const folders = l.folder ? l.folder.split("/").filter(Boolean) : [];
@@ -370,11 +459,7 @@ btn.onclick = async () => {
     return;
   }
 
-  const compression = {
-    enabled: document.getElementById("compressEnable").checked,
-    level:   document.getElementById("compressLevel").value,
-    type:    document.getElementById("compressType").value
-  };
+  const compression = getCompressionState();
 
   const jobId = crypto.randomUUID();
   currentJobId = jobId;
@@ -452,7 +537,7 @@ function collectLinksFromUI() {
 }
 
 /* =========================================================
-   Polling + results (unchanged)
+   Polling + results
    ========================================================= */
 
 function renderFileCard(name) {
@@ -511,7 +596,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History loader (last 10)
+   History loader
    ========================================================= */
 
 async function loadHistory() {
