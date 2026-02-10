@@ -56,14 +56,14 @@ jobs:
           else
             git checkout --orphan progress
             git rm -rf .
-            mkdir -p progress/progress
+            mkdir -p progress
             git add progress
             git commit -m "init progress branch"
             git push origin progress
           fi
 
       # --------------------------------------------------
-      # record job start time
+      # record job start time (UTC)
       # --------------------------------------------------
       - name: Record job start time
         run: |
@@ -119,7 +119,7 @@ jobs:
                       "final": f,
                       "folder": "",
                       "notes": "",
-                      "status": "pending"
+                      "status": "retry"
                   })
 
           # ---------------- advanced mode ----------------
@@ -130,6 +130,7 @@ jobs:
                   arr = []
 
               for x in arr:
+
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
 
@@ -144,8 +145,8 @@ jobs:
                       t = compression.get("type","zip")
                       final = base + "." + archive_ext(t)
                   else:
-                      rname = x.get("rename")
-                      final = rname if rname else name
+                      r = x.get("rename")
+                      final = r if r else name
 
                   files.append({
                       "original": name,
@@ -190,48 +191,52 @@ jobs:
       # -----------------------------
       - name: Stage – validating
         run: |
-          mkdir -p progress/progress
-          echo "validating" > progress/progress/${{ inputs.job_id }}.txt
-          git add progress/progress/${{ inputs.job_id }}.txt
+          mkdir -p progress
+          echo "validating" > progress/${{ inputs.job_id }}.txt
+          git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
+          sleep 5
 
       # -----------------------------
       # downloading
       # -----------------------------
       - name: Stage – downloading
         run: |
-          echo "downloading" > progress/progress/${{ inputs.job_id }}.txt
-          git add progress/progress/${{ inputs.job_id }}.txt
+          echo "downloading" > progress/${{ inputs.job_id }}.txt
+          git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
+          sleep 5
 
       # -----------------------------
       # uploading
       # -----------------------------
       - name: Stage – uploading
         run: |
-          echo "uploading" > progress/progress/${{ inputs.job_id }}.txt
-          git add progress/progress/${{ inputs.job_id }}.txt
+          echo "uploading" > progress/${{ inputs.job_id }}.txt
+          git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
+          sleep 5
 
       # -----------------------------
       # verifying
       # -----------------------------
       - name: Stage – verifying
         run: |
-          echo "verifying" > progress/progress/${{ inputs.job_id }}.txt
-          git add progress/progress/${{ inputs.job_id }}.txt
+          echo "verifying" > progress/${{ inputs.job_id }}.txt
+          git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
+          sleep 5
 
       # --------------------------------------------------
       # produce result + summary
       # --------------------------------------------------
       - name: Build result and summary
         run: |
-          mkdir -p progress/progress/result
+          mkdir -p progress/result
 
           python3 << 'EOF'
           import json, time, os
@@ -247,25 +252,25 @@ jobs:
 
           now = int(time.time())
 
-          total_bytes = 0
+          total_size = 0
 
           for fobj in files:
               if "fail" in (fobj.get("final") or "").lower():
                   fobj["status"] = "failed"
                   size = 0
               else:
-                  fobj["status"] = "success"
+                  fobj["status"] = "ok"
                   size = 123456
 
               fobj["size"] = size
-              total_bytes += size
+              total_size += size
 
           summary = {
               "total_files": len(files),
-              "total_bytes": total_bytes,
+              "total_size": total_size,
+              "time_taken": now - start,
               "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
               "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
-              "time_taken_sec": now - start,
               "compression": compression
           }
 
@@ -275,14 +280,12 @@ jobs:
               "notes": os.environ.get("NOTES","")
           }
 
-          out_path = f"progress/progress/result/{os.environ['JOB_ID']}.json"
-
-          with open(out_path,"w") as f:
+          with open("progress/result/%s.json" % os.environ["JOB_ID"],"w") as f:
               json.dump(out,f,indent=2)
 
           EOF
 
-          git add progress/progress/result/${{ inputs.job_id }}.json
+          git add progress/result/${{ inputs.job_id }}.json
           git commit -m "result ${{ inputs.job_id }}" || true
           git push origin progress
         env:
@@ -295,23 +298,23 @@ jobs:
       - name: Update mirror history
         if: always()
         run: |
-          mkdir -p progress/progress
+          mkdir -p progress
 
           python3 << 'EOF'
           import json, os, time
 
-          path = "progress/progress/history.json"
+          path = "progress/history.json"
 
           job_id = os.environ["JOB_ID"]
           run_id = os.environ["RUN_ID"]
-          status = os.environ.get("STATUS","completed")
+          conclusion = os.environ.get("CONCLUSION","completed")
 
-          now = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
+          now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
           entry = {
               "job_id": job_id,
               "run_id": int(run_id),
-              "status": status,
+              "status": conclusion,
               "time": now
           }
 
@@ -331,13 +334,13 @@ jobs:
 
           EOF
 
-          git add progress/progress/history.json
+          git add progress/history.json
           git commit -m "history update ${{ inputs.job_id }}" || true
           git push origin progress
         env:
           JOB_ID: ${{ inputs.job_id }}
           RUN_ID: ${{ github.run_id }}
-          STATUS: ${{ job.status }}
+          CONCLUSION: ${{ job.status }}
 
       # -----------------------------
       # finished
@@ -345,7 +348,7 @@ jobs:
       - name: Stage – finished
         if: always()
         run: |
-          echo "finished" > progress/progress/${{ inputs.job_id }}.txt
-          git add progress/progress/${{ inputs.job_id }}.txt
+          echo "finished" > progress/${{ inputs.job_id }}.txt
+          git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage finished ${{ inputs.job_id }}" || true
           git push origin progress
