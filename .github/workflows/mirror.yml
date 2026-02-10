@@ -76,6 +76,7 @@ jobs:
       - name: Build job file list
         run: |
           mkdir -p work
+
           python3 << 'EOF'
           import json, os
 
@@ -105,9 +106,15 @@ jobs:
 
           files = []
 
+          # ------------------------------------------------
           # retry mode
+          # ------------------------------------------------
           if retry:
-              r = json.loads(retry)
+              try:
+                  r = json.loads(retry)
+              except:
+                  r = []
+
               for f in r:
                   files.append({
                       "original": f,
@@ -117,22 +124,30 @@ jobs:
                       "status": "retry"
                   })
 
+          # ------------------------------------------------
           # advanced mode
+          # ------------------------------------------------
           elif links:
-              arr = json.loads(links)
+              try:
+                  arr = json.loads(links)
+              except:
+                  arr = []
 
               for x in arr:
+
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
 
-                  base = x.get("rename_base") or x.get("rename") or name
+                  base = x.get("rename_base") or ""
                   folder = x.get("folder") or ""
                   notes  = x.get("notes") or ""
 
+                  if not base:
+                      base = name.rsplit(".",1)[0]
+
                   if compression and compression.get("enabled"):
                       t = compression.get("type","zip")
-                      ext = archive_ext(t)
-                      final = base + "." + ext
+                      final = base + "." + archive_ext(t)
                   else:
                       r = x.get("rename")
                       final = r if r else name
@@ -145,13 +160,17 @@ jobs:
                       "status": "pending"
                   })
 
+          # ------------------------------------------------
           # old urls mode
+          # ------------------------------------------------
           elif urls:
               for u in urls.splitlines():
                   u = u.strip()
                   if not u:
                       continue
+
                   name = u.split("/")[-1] or "file"
+
                   files.append({
                       "original": name,
                       "final": name,
@@ -183,7 +202,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 20
+          sleep 10
 
       # -----------------------------
       # downloading
@@ -194,7 +213,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 20
+          sleep 10
 
       # -----------------------------
       # uploading
@@ -205,7 +224,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 20
+          sleep 10
 
       # -----------------------------
       # verifying
@@ -216,7 +235,7 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 20
+          sleep 10
 
       # --------------------------------------------------
       # produce result + summary
@@ -238,7 +257,7 @@ jobs:
           compression = data.get("compression")
 
           for fobj in files:
-              if "fail" in fobj["final"].lower():
+              if "fail" in (fobj.get("final") or "").lower():
                   fobj["status"] = "failed"
                   fobj["size"] = 0
               else:
@@ -261,7 +280,7 @@ jobs:
               "notes": os.environ.get("NOTES","")
           }
 
-          with open("progress/result/${{ inputs.job_id }}.json","w") as f:
+          with open("progress/result/%s.json" % os.environ["JOB_ID"],"w") as f:
               json.dump(out,f,indent=2)
 
           EOF
@@ -271,6 +290,7 @@ jobs:
           git push origin progress
         env:
           NOTES: ${{ inputs.notes }}
+          JOB_ID: ${{ inputs.job_id }}
 
       # --------------------------------------------------
       # update mirror history
@@ -285,15 +305,16 @@ jobs:
 
           path = "progress/history.json"
 
-          job_id = os.environ.get("JOB_ID")
-          run_id = os.environ.get("RUN_ID")
+          job_id = os.environ["JOB_ID"]
+          run_id = os.environ["RUN_ID"]
+          conclusion = os.environ.get("CONCLUSION","completed")
 
           now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
           entry = {
               "job_id": job_id,
               "run_id": run_id,
-              "status": "completed",
+              "status": conclusion,
               "time": now
           }
 
@@ -306,7 +327,7 @@ jobs:
               arr = []
 
           arr.insert(0, entry)
-          arr = arr[:20]
+          arr = arr[:10]
 
           with open(path, "w") as f:
               json.dump(arr, f, indent=2)
@@ -319,6 +340,7 @@ jobs:
         env:
           JOB_ID: ${{ inputs.job_id }}
           RUN_ID: ${{ github.run_id }}
+          CONCLUSION: ${{ job.status }}
 
       # -----------------------------
       # finished
