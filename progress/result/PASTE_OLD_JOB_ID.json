@@ -1,0 +1,21 @@
+{
+  "files": [
+    {
+      "original": "testfile.zip",
+      "final": "testfile.zip",
+      "folder": "",
+      "notes": "",
+      "status": "ok",
+      "size": 123456
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_size": 123456,
+    "time_taken": 23,
+    "started_at": "2026-02-10T14:42:21Z",
+    "finished_at": "2026-02-10T14:42:44Z",
+    "compression": null
+  },
+  "notes": ""
+}
