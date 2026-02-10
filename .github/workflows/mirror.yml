@@ -56,7 +56,7 @@ jobs:
           else
             git checkout --orphan progress
             git rm -rf .
-            mkdir -p progress
+            mkdir -p progress/progress
             git add progress
             git commit -m "init progress branch"
             git push origin progress
@@ -68,7 +68,7 @@ jobs:
       - name: Record job start time
         run: |
           mkdir -p work
-          date +%s > work/start_time.txt
+          date -u +%s > work/start_time.txt
 
       # --------------------------------------------------
       # build working file list
@@ -106,9 +106,7 @@ jobs:
 
           files = []
 
-          # ------------------------------------------------
-          # retry mode
-          # ------------------------------------------------
+          # ---------------- retry mode ----------------
           if retry:
               try:
                   r = json.loads(retry)
@@ -121,12 +119,10 @@ jobs:
                       "final": f,
                       "folder": "",
                       "notes": "",
-                      "status": "retry"
+                      "status": "pending"
                   })
 
-          # ------------------------------------------------
-          # advanced mode
-          # ------------------------------------------------
+          # ---------------- advanced mode ----------------
           elif links:
               try:
                   arr = json.loads(links)
@@ -138,7 +134,7 @@ jobs:
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
 
-                  base = x.get("rename_base") or ""
+                  base   = x.get("rename_base") or ""
                   folder = x.get("folder") or ""
                   notes  = x.get("notes") or ""
 
@@ -160,9 +156,7 @@ jobs:
                       "status": "pending"
                   })
 
-          # ------------------------------------------------
-          # old urls mode
-          # ------------------------------------------------
+          # ---------------- legacy urls mode ----------------
           elif urls:
               for u in urls.splitlines():
                   u = u.strip()
@@ -197,52 +191,48 @@ jobs:
       # -----------------------------
       - name: Stage – validating
         run: |
-          mkdir -p progress
-          echo "validating" > progress/${{ inputs.job_id }}.txt
-          git add progress/${{ inputs.job_id }}.txt
+          mkdir -p progress/progress
+          echo "validating" > progress/progress/${{ inputs.job_id }}.txt
+          git add progress/progress/${{ inputs.job_id }}.txt
           git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
 
       # -----------------------------
       # downloading
       # -----------------------------
       - name: Stage – downloading
         run: |
-          echo "downloading" > progress/${{ inputs.job_id }}.txt
-          git add progress/${{ inputs.job_id }}.txt
+          echo "downloading" > progress/progress/${{ inputs.job_id }}.txt
+          git add progress/progress/${{ inputs.job_id }}.txt
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
 
       # -----------------------------
       # uploading
       # -----------------------------
       - name: Stage – uploading
         run: |
-          echo "uploading" > progress/${{ inputs.job_id }}.txt
-          git add progress/${{ inputs.job_id }}.txt
+          echo "uploading" > progress/progress/${{ inputs.job_id }}.txt
+          git add progress/progress/${{ inputs.job_id }}.txt
           git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
 
       # -----------------------------
       # verifying
       # -----------------------------
       - name: Stage – verifying
         run: |
-          echo "verifying" > progress/${{ inputs.job_id }}.txt
-          git add progress/${{ inputs.job_id }}.txt
+          echo "verifying" > progress/progress/${{ inputs.job_id }}.txt
+          git add progress/progress/${{ inputs.job_id }}.txt
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 10
 
       # --------------------------------------------------
       # produce result + summary
       # --------------------------------------------------
       - name: Build result and summary
         run: |
-          mkdir -p progress/result
+          mkdir -p progress/progress/result
 
           python3 << 'EOF'
           import json, time, os
@@ -256,21 +246,28 @@ jobs:
           files = data.get("files", [])
           compression = data.get("compression")
 
+          now = int(time.time())
+
+          total_bytes = 0
+
           for fobj in files:
+              # demo success/failure logic
               if "fail" in (fobj.get("final") or "").lower():
                   fobj["status"] = "failed"
-                  fobj["size"] = 0
+                  size = 0
               else:
-                  fobj["status"] = "ok"
-                  fobj["size"] = 123456
+                  fobj["status"] = "success"
+                  size = 123456
 
-          total_files = len(files)
-          total_size  = sum(x.get("size",0) for x in files)
+              fobj["size"] = size
+              total_bytes += size
 
           summary = {
-              "total_files": total_files,
-              "total_size": total_size,
-              "time_taken": int(time.time() - start),
+              "total_files": len(files),
+              "total_bytes": total_bytes,
+              "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
+              "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+              "time_taken_sec": now - start,
               "compression": compression
           }
 
@@ -280,12 +277,14 @@ jobs:
               "notes": os.environ.get("NOTES","")
           }
 
-          with open("progress/result/%s.json" % os.environ["JOB_ID"],"w") as f:
+          out_path = f"progress/progress/result/{os.environ['JOB_ID']}.json"
+
+          with open(out_path,"w") as f:
               json.dump(out,f,indent=2)
 
           EOF
 
-          git add progress/result/${{ inputs.job_id }}.json
+          git add progress/progress/result/${{ inputs.job_id }}.json
           git commit -m "result ${{ inputs.job_id }}" || true
           git push origin progress
         env:
@@ -298,23 +297,23 @@ jobs:
       - name: Update mirror history
         if: always()
         run: |
-          mkdir -p progress
+          mkdir -p progress/progress
 
           python3 << 'EOF'
           import json, os, time
 
-          path = "progress/history.json"
+          path = "progress/progress/history.json"
 
           job_id = os.environ["JOB_ID"]
           run_id = os.environ["RUN_ID"]
-          conclusion = os.environ.get("CONCLUSION","completed")
+          status = os.environ.get("STATUS","completed")
 
-          now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+          now = time.strftime("%Y-%m-%d %H:%M", time.gmtime())
 
           entry = {
               "job_id": job_id,
-              "run_id": run_id,
-              "status": conclusion,
+              "run_id": int(run_id),
+              "status": status,
               "time": now
           }
 
@@ -334,13 +333,13 @@ jobs:
 
           EOF
 
-          git add progress/history.json
+          git add progress/progress/history.json
           git commit -m "history update ${{ inputs.job_id }}" || true
           git push origin progress
         env:
           JOB_ID: ${{ inputs.job_id }}
           RUN_ID: ${{ github.run_id }}
-          CONCLUSION: ${{ job.status }}
+          STATUS: ${{ job.status }}
 
       # -----------------------------
       # finished
@@ -348,7 +347,7 @@ jobs:
       - name: Stage – finished
         if: always()
         run: |
-          echo "finished" > progress/${{ inputs.job_id }}.txt
-          git add progress/${{ inputs.job_id }}.txt
+          echo "finished" > progress/progress/${{ inputs.job_id }}.txt
+          git add progress/progress/${{ inputs.job_id }}.txt
           git commit -m "stage finished ${{ inputs.job_id }}" || true
           git push origin progress
