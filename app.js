@@ -629,7 +629,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History (worker + raw fallback + badges)
+   History  (shows file / folder instead of job id)
    ========================================================= */
 
 async function loadHistory() {
@@ -641,7 +641,6 @@ async function loadHistory() {
 
   let arr = null;
 
-  /* 1) try worker */
   try {
     const r = await fetch(WORKER_URL + "/history", { cache: "no-store" });
     if (r.ok) {
@@ -650,7 +649,6 @@ async function loadHistory() {
     }
   } catch {}
 
-  /* 2) fallback → raw github */
   if (!arr) {
     try {
       const r2 = await fetch(
@@ -672,7 +670,38 @@ async function loadHistory() {
 
   list.innerHTML = "";
 
-  arr.slice(0,10).forEach(h => {
+  for (const h of arr.slice(0,10)) {
+
+    let displayName = h.job_id || "";
+
+    try {
+
+      const rr = await fetch(
+        "https://raw.githubusercontent.com/beingsk5/sourcemirror/progress/progress/result/" +
+          encodeURIComponent(h.job_id) +
+          ".json?ts=" + Date.now(),
+        { cache: "no-store" }
+      );
+
+      if (rr.ok) {
+
+        const data = await rr.json();
+
+        if (Array.isArray(data?.files) && data.files.length) {
+
+          const f = data.files[0];
+
+          const folder = f.folder || "";
+          const name   = f.final || f.original || "";
+
+          if (folder && name)
+            displayName = folder.replace(/\/+$/,"") + "/" + name;
+          else if (name)
+            displayName = name;
+        }
+      }
+
+    } catch {}
 
     const statusText = String(h.status || "").toLowerCase();
 
@@ -691,8 +720,10 @@ async function loadHistory() {
       "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition flex items-center justify-between gap-2";
 
     row.innerHTML = `
-      <div>
-        <div class="font-medium">${escapeHtml(h.job_id || "")}</div>
+      <div class="min-w-0">
+        <div class="font-medium truncate">
+          ${escapeHtml(displayName)}
+        </div>
         <div class="text-xs text-zinc-400">
           ${escapeHtml(h.time || "")}
         </div>
@@ -708,7 +739,7 @@ async function loadHistory() {
     }
 
     list.appendChild(row);
-  });
+  }
 }
 
 async function openHistoryJob(jobId, runId) {
