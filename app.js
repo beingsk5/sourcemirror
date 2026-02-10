@@ -598,7 +598,8 @@ function startPolling(runId, jobId) {
 
     const r = await fetch(
       WORKER_URL + "/status?run_id=" + encodeURIComponent(runId) +
-      "&job_id=" + encodeURIComponent(jobId)
+      "&job_id=" + encodeURIComponent(jobId),
+      { cache: "no-store" }
     );
 
     if (!r.ok) return;
@@ -628,7 +629,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History (WITH BADGES)
+   History (worker + raw fallback + badges)
    ========================================================= */
 
 async function loadHistory() {
@@ -636,60 +637,78 @@ async function loadHistory() {
   const list = document.getElementById("historyList");
   if (!list) return;
 
+  list.textContent = "Loading…";
+
+  let arr = null;
+
+  /* 1) try worker */
   try {
+    const r = await fetch(WORKER_URL + "/history", { cache: "no-store" });
+    if (r.ok) {
+      const j = await r.json();
+      if (Array.isArray(j)) arr = j;
+    }
+  } catch {}
 
-    const r = await fetch(WORKER_URL + "/history");
-    if (!r.ok) throw 0;
+  /* 2) fallback → raw github */
+  if (!arr) {
+    try {
+      const r2 = await fetch(
+        "https://raw.githubusercontent.com/beingsk5/sourcemirror/progress/progress/history.json?ts=" +
+          Date.now(),
+        { cache: "no-store" }
+      );
+      if (r2.ok) {
+        const j2 = await r2.json();
+        if (Array.isArray(j2)) arr = j2;
+      }
+    } catch {}
+  }
 
-    const arr = await r.json();
+  if (!arr || !arr.length) {
+    list.textContent = "No jobs yet.";
+    return;
+  }
 
-    list.innerHTML = "";
+  list.innerHTML = "";
 
-    if (!Array.isArray(arr) || !arr.length) {
-      list.textContent = "No jobs yet.";
-      return;
+  arr.slice(0,10).forEach(h => {
+
+    const statusText = String(h.status || "").toLowerCase();
+
+    const isFail =
+      statusText.includes("fail") ||
+      statusText.includes("error");
+
+    const badgeClass = isFail
+      ? "bg-red-500/10 text-red-400 border border-red-500/30"
+      : "bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+
+    const badgeText = isFail ? "FAILED" : "COMPLETED";
+
+    const row = document.createElement("div");
+    row.className =
+      "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition flex items-center justify-between gap-2";
+
+    row.innerHTML = `
+      <div>
+        <div class="font-medium">${escapeHtml(h.job_id || "")}</div>
+        <div class="text-xs text-zinc-400">
+          ${escapeHtml(h.time || "")}
+        </div>
+      </div>
+
+      <div class="px-2 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">
+        ${badgeText}
+      </div>
+    `;
+
+    if (h.run_id) {
+      row.onclick = () => openHistoryJob(h.job_id, h.run_id);
     }
 
-    arr.slice(0,10).forEach(h => {
-
-      const status = String(h.status || "").toLowerCase();
-      const isFail =
-        status.includes("fail") ||
-        status.includes("error");
-
-      const badgeClass = isFail
-        ? "bg-red-500/10 text-red-400 border-red-500/30"
-        : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
-
-      const badgeText = isFail ? "FAILED" : "COMPLETED";
-
-      const row = document.createElement("div");
-      row.className =
-        "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition flex items-center justify-between gap-2";
-
-      row.innerHTML = `
-        <div>
-          <div class="font-medium">${escapeHtml(h.job_id)}</div>
-          <div class="text-xs text-zinc-400">
-            ${escapeHtml(h.time || "")}
-          </div>
-        </div>
-
-        <div class="px-2 py-0.5 rounded border text-[10px] font-semibold ${badgeClass}">
-          ${badgeText}
-        </div>
-      `;
-
-      if (h.run_id) {
-        row.onclick = () => openHistoryJob(h.job_id, h.run_id);
-      }
-
-      list.appendChild(row);
-    });
-
-  } catch {
-    list.textContent = "History is not available yet.";
-  }
+    list.appendChild(row);
+  });
 }
 
 async function openHistoryJob(jobId, runId) {
