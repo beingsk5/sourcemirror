@@ -1,0 +1,19 @@
+{
+  "files": [
+    {
+      "original": "100MB.bin",
+      "final": "100MB.bin",
+      "folder": "",
+      "notes": "",
+      "status": "ok",
+      "size": 123456
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_size": 123456,
+    "time_taken": 42,
+    "compression": null
+  },
+  "notes": ""
+}
