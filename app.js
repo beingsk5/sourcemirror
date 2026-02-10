@@ -468,6 +468,9 @@ btn.onclick = async () => {
   const jobId = crypto.randomUUID();
   currentJobId = jobId;
 
+  const oldSummary = document.getElementById("summaryBox");
+  if (oldSummary) oldSummary.remove();
+
   btn.disabled = true;
   btn.textContent = "Starting…";
 
@@ -590,6 +593,70 @@ function renderResultFiles(files) {
   });
 }
 
+/* =========================================================
+   Summary UI
+   ========================================================= */
+
+function renderSummaryBox(summary) {
+
+  if (!summary) return;
+
+  let box = document.getElementById("summaryBox");
+
+  if (!box) {
+    box = document.createElement("div");
+    box.id = "summaryBox";
+    box.className =
+      "mt-4 border border-zinc-800 rounded-xl p-4 bg-zinc-950/40 text-xs text-zinc-300";
+    filesArea.parentElement.insertBefore(box, filesArea);
+  }
+
+  const size =
+    typeof summary.total_bytes === "number"
+      ? formatBytes(summary.total_bytes)
+      : "-";
+
+  const time =
+    typeof summary.time_taken_sec === "number"
+      ? formatDuration(summary.time_taken_sec)
+      : "-";
+
+  box.innerHTML = `
+    <div class="font-semibold text-sm mb-2">Job summary</div>
+
+    <div class="grid grid-cols-2 gap-2">
+      <div>
+        <div class="text-zinc-400">Total files</div>
+        <div>${escapeHtml(summary.total_files ?? "-")}</div>
+      </div>
+
+      <div>
+        <div class="text-zinc-400">Total size</div>
+        <div>${escapeHtml(size)}</div>
+      </div>
+
+      <div>
+        <div class="text-zinc-400">Started</div>
+        <div>${escapeHtml(formatTime(summary.started_at))}</div>
+      </div>
+
+      <div>
+        <div class="text-zinc-400">Finished</div>
+        <div>${escapeHtml(formatTime(summary.finished_at))}</div>
+      </div>
+
+      <div>
+        <div class="text-zinc-400">Time taken</div>
+        <div>${escapeHtml(time)}</div>
+      </div>
+    </div>
+  `;
+}
+
+/* =========================================================
+   Polling
+   ========================================================= */
+
 function startPolling(runId, jobId) {
 
   if (pollingTimer) clearInterval(pollingTimer);
@@ -621,6 +688,9 @@ function startPolling(runId, jobId) {
 
       if (Array.isArray(data.files))
         renderResultFiles(data.files);
+
+      if (data.summary)
+        renderSummaryBox(data.summary);
 
       loadHistory();
     }
@@ -744,6 +814,9 @@ async function loadHistory() {
 
 async function openHistoryJob(jobId, runId) {
 
+  const oldSummary = document.getElementById("summaryBox");
+  if (oldSummary) oldSummary.remove();
+
   currentJobId = jobId;
   currentRunId = runId;
 
@@ -814,10 +887,37 @@ function escapeHtml(s) {
   }[m]));
 }
 
+function formatBytes(bytes) {
+  if (typeof bytes !== "number") return "-";
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B","KB","MB","GB","TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return (bytes / Math.pow(k, i)).toFixed(2) + " " + sizes[i];
+}
+
+function formatDuration(sec) {
+  if (typeof sec !== "number") return "-";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function formatTime(t) {
+  if (!t) return "-";
+  try { return new Date(t).toLocaleString(); }
+  catch { return "-"; }
+}
+
 /* =========================================================
    Load history on page open
    ========================================================= */
 
 document.addEventListener("DOMContentLoaded", () => {
+  const note = document.getElementById("compressionNote");
+  if (note) note.classList.toggle("hidden", !getCompressionState().enabled);
   loadHistory();
 });
