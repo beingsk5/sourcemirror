@@ -140,24 +140,19 @@ if (!historyBox) {
 }
 
 /* =========================================================
-   Place panels in professional order
+   Place panels
    ========================================================= */
 
 const container = linksArea.parentElement;
 
-/* compression -> preview -> job notes */
-if (!compressionBox.parentElement) {
+if (!compressionBox.parentElement)
   container.insertBefore(compressionBox, jobNotes.parentElement);
-}
 
-if (!previewBox.parentElement) {
+if (!previewBox.parentElement)
   container.insertBefore(previewBox, jobNotes.parentElement);
-}
 
-/* history must always be LAST */
-if (!historyBox.parentElement) {
+if (!historyBox.parentElement)
   container.appendChild(historyBox);
-}
 
 /* =========================================================
    Compression reactions
@@ -231,11 +226,11 @@ function renderLinksUI() {
 
       <input
         class="urlInput w-full mb-3 p-2 rounded-lg bg-zinc-950 border border-zinc-800"
-        placeholder="Direct file URL (for example: https://example.com/build.zip)"
+        placeholder="Direct file URL"
         value="${escapeHtml(item.url)}"
       >
 
-      <details class="group">
+      <details>
         <summary class="cursor-pointer text-xs text-zinc-400 select-none">
           Advanced options
         </summary>
@@ -244,7 +239,7 @@ function renderLinksUI() {
 
           <input
             class="folderInput w-full p-2 rounded-lg bg-zinc-950 border border-zinc-800"
-            placeholder="Target folder path (example: android/roms/14)"
+            placeholder="Target folder path"
             value="${escapeHtml(item.folder)}"
           >
 
@@ -344,7 +339,6 @@ function renderPreviewTree() {
     const orig = fileNameFromUrl(l.url);
 
     let baseName;
-
     if (l.rename_base) baseName = l.rename_base;
     else {
       const dot = orig.lastIndexOf(".");
@@ -634,12 +628,13 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History
+   History (WITH BADGES)
    ========================================================= */
 
 async function loadHistory() {
 
   const list = document.getElementById("historyList");
+  if (!list) return;
 
   try {
 
@@ -650,20 +645,44 @@ async function loadHistory() {
 
     list.innerHTML = "";
 
+    if (!Array.isArray(arr) || !arr.length) {
+      list.textContent = "No jobs yet.";
+      return;
+    }
+
     arr.slice(0,10).forEach(h => {
+
+      const status = String(h.status || "").toLowerCase();
+      const isFail =
+        status.includes("fail") ||
+        status.includes("error");
+
+      const badgeClass = isFail
+        ? "bg-red-500/10 text-red-400 border-red-500/30"
+        : "bg-emerald-500/10 text-emerald-400 border-emerald-500/30";
+
+      const badgeText = isFail ? "FAILED" : "COMPLETED";
 
       const row = document.createElement("div");
       row.className =
-        "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition";
+        "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition flex items-center justify-between gap-2";
 
       row.innerHTML = `
-        <div class="font-medium">${escapeHtml(h.job_id)}</div>
-        <div class="text-xs text-zinc-400">
-          ${escapeHtml(h.status)} · ${h.time}
+        <div>
+          <div class="font-medium">${escapeHtml(h.job_id)}</div>
+          <div class="text-xs text-zinc-400">
+            ${escapeHtml(h.time || "")}
+          </div>
+        </div>
+
+        <div class="px-2 py-0.5 rounded border text-[10px] font-semibold ${badgeClass}">
+          ${badgeText}
         </div>
       `;
 
-      row.onclick = () => openHistoryJob(h.job_id, h.run_id);
+      if (h.run_id) {
+        row.onclick = () => openHistoryJob(h.job_id, h.run_id);
+      }
 
       list.appendChild(row);
     });
@@ -744,3 +763,11 @@ function escapeHtml(s) {
     "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"
   }[m]));
 }
+
+/* =========================================================
+   Load history on page open
+   ========================================================= */
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadHistory();
+});
