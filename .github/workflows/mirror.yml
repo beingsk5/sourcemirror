@@ -130,7 +130,6 @@ jobs:
                   arr = []
 
               for x in arr:
-
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
 
@@ -145,8 +144,8 @@ jobs:
                       t = compression.get("type","zip")
                       final = base + "." + archive_ext(t)
                   else:
-                      r = x.get("rename")
-                      final = r if r else name
+                      rname = x.get("rename")
+                      final = rname if rname else name
 
                   files.append({
                       "original": name,
@@ -251,7 +250,6 @@ jobs:
           total_bytes = 0
 
           for fobj in files:
-              # demo success/failure logic
               if "fail" in (fobj.get("final") or "").lower():
                   fobj["status"] = "failed"
                   size = 0
