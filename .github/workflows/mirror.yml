@@ -101,7 +101,6 @@ jobs:
 
           files = []
 
-          # retry mode (ONLY when /retry API used)
           if retry:
               try:
                   arr = json.loads(retry)
@@ -192,7 +191,7 @@ jobs:
           git push origin progress
 
       # -----------------------------
-      # downloading
+      # downloading  (FAST – aria2)
       # -----------------------------
       - name: Stage – downloading
         run: |
@@ -201,10 +200,13 @@ jobs:
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
 
+          sudo apt-get update -y
+          sudo apt-get install -y aria2
+
           mkdir -p work/upload
 
           python3 << 'EOF'
-          import json, pathlib, urllib.request
+          import json, pathlib, subprocess
 
           with open("work/files.json") as f:
               data = json.load(f)
@@ -222,8 +224,19 @@ jobs:
 
               out = outdir / name
 
+              cmd = [
+                  "aria2c",
+                  "-x", "16",
+                  "-s", "16",
+                  "-k", "1M",
+                  "--file-allocation=trunc",
+                  "-o", name,
+                  "-d", str(outdir),
+                  url
+              ]
+
               try:
-                  urllib.request.urlretrieve(url, out)
+                  subprocess.run(cmd, check=False)
               except Exception as e:
                   print("Download failed:", url, e)
 
@@ -254,7 +267,7 @@ jobs:
             ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
 
       # -----------------------------
-      # verifying (stage marker only)
+      # verifying
       # -----------------------------
       - name: Stage – verifying
         run: |
@@ -264,13 +277,13 @@ jobs:
           git push origin progress
 
       # --------------------------------------------------
-      # result + summary
-      # (REMOTE SSH VERIFICATION + REMOTE SIZE)
+      # result + summary (REMOTE SSH VERIFICATION)
       # --------------------------------------------------
       - name: Build result and summary
         env:
-          SF_USER: ${{ secrets.SF_USER }}
           SF_PROJECT: ${{ secrets.SF_PROJECT }}
+          NOTES: ${{ inputs.notes }}
+          JOB_ID: ${{ inputs.job_id }}
         run: |
           mkdir -p progress/result
 
@@ -345,9 +358,6 @@ jobs:
           git add progress/result/${{ inputs.job_id }}.json
           git commit -m "result ${{ inputs.job_id }}" || true
           git push origin progress
-        env:
-          NOTES: ${{ inputs.notes }}
-          JOB_ID: ${{ inputs.job_id }}
 
       # --------------------------------------------------
       # update mirror history
