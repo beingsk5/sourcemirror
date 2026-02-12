@@ -6,23 +6,18 @@ on:
       job_id:
         required: true
         type: string
-
       urls:
         required: false
         type: string
-
       links:
         required: false
         type: string
-
       notes:
         required: false
         type: string
-
       retry_files:
         required: false
         type: string
-
       compression:
         required: false
         type: string
@@ -41,7 +36,7 @@ jobs:
           fetch-depth: 0
 
       # --------------------------------------------------
-      # prepare progress branch
+      # prepare progress branch (DO NOT CHANGE PATHING)
       # --------------------------------------------------
       - name: Prepare progress branch
         run: |
@@ -63,7 +58,7 @@ jobs:
           fi
 
       # --------------------------------------------------
-      # record job start time (UTC)
+      # record job start time
       # --------------------------------------------------
       - name: Record job start time
         run: |
@@ -71,7 +66,7 @@ jobs:
           date -u +%s > work/start_time.txt
 
       # --------------------------------------------------
-      # build working file list
+      # build working file list (UI compatible)
       # --------------------------------------------------
       - name: Build job file list
         run: |
@@ -106,14 +101,14 @@ jobs:
 
           files = []
 
-          # ---------------- retry mode ----------------
+          # retry mode (ONLY when /retry API used)
           if retry:
               try:
-                  r = json.loads(retry)
+                  arr = json.loads(retry)
               except:
-                  r = []
+                  arr = []
 
-              for f in r:
+              for f in arr:
                   files.append({
                       "url": "",
                       "original": f,
@@ -123,7 +118,6 @@ jobs:
                       "status": "retry"
                   })
 
-          # ---------------- advanced mode ----------------
           elif links:
               try:
                   arr = json.loads(links)
@@ -131,7 +125,6 @@ jobs:
                   arr = []
 
               for x in arr:
-
                   url = x.get("url","")
                   name = url.split("/")[-1] or "file"
 
@@ -143,8 +136,7 @@ jobs:
                       base = name.rsplit(".",1)[0]
 
                   if compression and compression.get("enabled"):
-                      t = compression.get("type","zip")
-                      final = base + "." + archive_ext(t)
+                      final = base + "." + archive_ext(compression.get("type","zip"))
                   else:
                       r = x.get("rename")
                       final = r if r else name
@@ -158,7 +150,6 @@ jobs:
                       "status": "pending"
                   })
 
-          # ---------------- legacy urls mode ----------------
           elif urls:
               for u in urls.splitlines():
                   u = u.strip()
@@ -199,7 +190,6 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage validating ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 5
 
       # -----------------------------
       # downloading
@@ -210,21 +200,61 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage downloading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 5
+
+          mkdir -p work/upload
+
+          python3 << 'EOF'
+          import json, pathlib, urllib.request
+
+          with open("work/files.json") as f:
+              data = json.load(f)
+
+          for fobj in data["files"]:
+              url = fobj.get("url")
+              if not url:
+                  continue
+
+              folder = fobj.get("folder","").strip("/")
+              name   = fobj.get("final")
+
+              outdir = pathlib.Path("work/upload") / folder
+              outdir.mkdir(parents=True, exist_ok=True)
+
+              out = outdir / name
+
+              try:
+                  urllib.request.urlretrieve(url, out)
+              except Exception as e:
+                  print("Download failed:", url, e)
+
+          EOF
 
       # -----------------------------
       # uploading
       # -----------------------------
       - name: Stage – uploading
+        env:
+          SF_USER: ${{ secrets.SF_USER }}
+          SF_PROJECT: ${{ secrets.SF_PROJECT }}
+          SF_SSHKEY: ${{ secrets.SF_SSHKEY }}
         run: |
           echo "uploading" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage uploading ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 5
+
+          mkdir -p ~/.ssh
+          echo "$SF_SSHKEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          ssh-keyscan frs.sourceforge.net >> ~/.ssh/known_hosts
+
+          rsync -av --partial \
+            work/upload/ \
+            ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
 
       # -----------------------------
-      # verifying
+      # verifying (stage marker only)
       # -----------------------------
       - name: Stage – verifying
         run: |
@@ -232,28 +262,20 @@ jobs:
           git add progress/${{ inputs.job_id }}.txt
           git commit -m "stage verifying ${{ inputs.job_id }}" || true
           git push origin progress
-          sleep 5
 
       # --------------------------------------------------
-      # produce result + summary  (REAL SIZES)
+      # result + summary
+      # (REMOTE SSH VERIFICATION + REMOTE SIZE)
       # --------------------------------------------------
       - name: Build result and summary
+        env:
+          SF_USER: ${{ secrets.SF_USER }}
+          SF_PROJECT: ${{ secrets.SF_PROJECT }}
         run: |
           mkdir -p progress/result
 
           python3 << 'EOF'
-          import json, time, os
-          import urllib.request
-
-          def head_size(url):
-              if not url:
-                  return 0
-              try:
-                  req = urllib.request.Request(url, method="HEAD")
-                  with urllib.request.urlopen(req, timeout=20) as r:
-                      return int(r.headers.get("Content-Length") or 0)
-              except:
-                  return 0
+          import json, time, os, subprocess, shlex
 
           with open("work/start_time.txt") as f:
               start = int(f.read().strip())
@@ -261,30 +283,48 @@ jobs:
           with open("work/files.json") as f:
               data = json.load(f)
 
-          files = data.get("files", [])
+          files = data["files"]
           compression = data.get("compression")
+
+          total = 0
+
+          def remote_size(path):
+              try:
+                  cmd = [
+                      "ssh",
+                      "frs.sourceforge.net",
+                      f"stat -c %s {shlex.quote(path)}"
+                  ]
+                  out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=20)
+                  return int(out.decode().strip())
+              except:
+                  return None
+
+          for fobj in files:
+              folder = fobj.get("folder","").strip("/")
+              name   = fobj.get("final")
+
+              if folder:
+                  rpath = f"/home/frs/project/{os.environ['SF_PROJECT']}/{folder}/{name}"
+              else:
+                  rpath = f"/home/frs/project/{os.environ['SF_PROJECT']}/{name}"
+
+              size = remote_size(rpath)
+
+              if size is not None:
+                  fobj["size"] = size
+                  fobj["status"] = "ok"
+                  total += size
+              else:
+                  fobj["size"] = 0
+                  if fobj.get("status") != "retry":
+                      fobj["status"] = "failed"
 
           now = int(time.time())
 
-          total_size = 0
-
-          for fobj in files:
-              size = head_size(fobj.get("url",""))
-
-              if size > 0:
-                  fobj["status"] = "ok"
-              else:
-                  if fobj.get("status") == "retry":
-                      fobj["status"] = "retry"
-                  else:
-                      fobj["status"] = "ok"
-
-              fobj["size"] = size
-              total_size += size
-
           summary = {
               "total_files": len(files),
-              "total_size": total_size,
+              "total_size": total,
               "time_taken": now - start,
               "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
               "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
@@ -324,14 +364,14 @@ jobs:
 
           job_id = os.environ["JOB_ID"]
           run_id = os.environ["RUN_ID"]
-          conclusion = os.environ.get("CONCLUSION","completed")
+          status = os.environ.get("CONCLUSION","completed")
 
           now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
 
           entry = {
               "job_id": job_id,
               "run_id": int(run_id),
-              "status": conclusion,
+              "status": status,
               "time": now
           }
 
@@ -346,8 +386,8 @@ jobs:
           arr.insert(0, entry)
           arr = arr[:10]
 
-          with open(path, "w") as f:
-              json.dump(arr, f, indent=2)
+          with open(path,"w") as f:
+              json.dump(arr,f,indent=2)
 
           EOF
 
