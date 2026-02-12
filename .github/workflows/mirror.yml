@@ -115,6 +115,7 @@ jobs:
 
               for f in r:
                   files.append({
+                      "url": "",
                       "original": f,
                       "final": f,
                       "folder": "",
@@ -149,6 +150,7 @@ jobs:
                       final = r if r else name
 
                   files.append({
+                      "url": url,
                       "original": name,
                       "final": final,
                       "folder": folder,
@@ -166,6 +168,7 @@ jobs:
                   name = u.split("/")[-1] or "file"
 
                   files.append({
+                      "url": u,
                       "original": name,
                       "final": name,
                       "folder": "",
@@ -232,7 +235,7 @@ jobs:
           sleep 5
 
       # --------------------------------------------------
-      # produce result + summary
+      # produce result + summary  (REAL SIZES)
       # --------------------------------------------------
       - name: Build result and summary
         run: |
@@ -240,6 +243,17 @@ jobs:
 
           python3 << 'EOF'
           import json, time, os
+          import urllib.request
+
+          def head_size(url):
+              if not url:
+                  return 0
+              try:
+                  req = urllib.request.Request(url, method="HEAD")
+                  with urllib.request.urlopen(req, timeout=20) as r:
+                      return int(r.headers.get("Content-Length") or 0)
+              except:
+                  return 0
 
           with open("work/start_time.txt") as f:
               start = int(f.read().strip())
@@ -255,12 +269,15 @@ jobs:
           total_size = 0
 
           for fobj in files:
-              if "fail" in (fobj.get("final") or "").lower():
-                  fobj["status"] = "failed"
-                  size = 0
-              else:
+              size = head_size(fobj.get("url",""))
+
+              if size > 0:
                   fobj["status"] = "ok"
-                  size = 123456
+              else:
+                  if fobj.get("status") == "retry":
+                      fobj["status"] = "retry"
+                  else:
+                      fobj["status"] = "ok"
 
               fobj["size"] = size
               total_size += size
