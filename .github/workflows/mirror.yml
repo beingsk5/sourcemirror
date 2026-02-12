@@ -66,14 +66,14 @@ jobs:
           date -u +%s > work/start_time.txt
 
       # --------------------------------------------------
-      # build working file list (UI compatible)
+      # build working file list  (FIX rename/ext bug)
       # --------------------------------------------------
       - name: Build job file list
         run: |
           mkdir -p work
 
           python3 << 'EOF'
-          import json, os
+          import json, os, pathlib
 
           links = os.environ.get("LINKS")
           urls  = os.environ.get("URLS")
@@ -101,7 +101,6 @@ jobs:
 
           files = []
 
-          # retry mode (ONLY via /retry API)
           if retry:
               try:
                   arr = json.loads(retry)
@@ -131,15 +130,23 @@ jobs:
                   base   = x.get("rename_base") or ""
                   folder = x.get("folder") or ""
                   notes  = x.get("notes") or ""
+                  rename = x.get("rename") or ""
 
-                  if not base:
-                      base = name.rsplit(".",1)[0]
+                  orig_ext = pathlib.Path(name).suffix
 
                   if compression and compression.get("enabled"):
-                      final = base + "." + archive_ext(compression.get("type","zip"))
+                      final = os.environ["JOB_ID"] + "." + archive_ext(compression.get("type","zip"))
                   else:
-                      r = x.get("rename")
-                      final = r if r else name
+                      if rename:
+                          p = pathlib.Path(rename)
+                          if p.suffix:
+                              final = rename
+                          else:
+                              final = rename + orig_ext
+                      elif base:
+                          final = base + orig_ext
+                      else:
+                          final = name
 
                   files.append({
                       "url": url,
@@ -179,6 +186,7 @@ jobs:
           URLS:  ${{ inputs.urls }}
           RETRY: ${{ inputs.retry_files }}
           COMPRESSION: ${{ inputs.compression }}
+          JOB_ID: ${{ inputs.job_id }}
 
       # -----------------------------
       # validating
@@ -192,7 +200,7 @@ jobs:
           git push origin progress
 
       # -----------------------------
-      # downloading (FAST + fallback + multi-source)
+      # downloading  (FAST aria2 + fallback + multi source)
       # -----------------------------
       - name: Stage – downloading
         run: |
@@ -202,26 +210,21 @@ jobs:
           git push origin progress
 
           sudo apt-get update -y
-          sudo apt-get install -y aria2
+          sudo apt-get install -y aria2 p7zip-full zip
 
           mkdir -p work/upload
 
           python3 << 'EOF'
-          import json, pathlib, subprocess, shlex
+          import json, pathlib, subprocess
 
           with open("work/files.json") as f:
               data = json.load(f)
 
           for fobj in data["files"]:
-
               urls = fobj.get("url")
-
               if not urls:
                   continue
 
-              # support:
-              # url = "https://..."
-              # or url = ["https://...", "https://mirror..."]
               if isinstance(urls, str):
                   url_list = [urls]
               elif isinstance(urls, list):
@@ -230,34 +233,79 @@ jobs:
                   continue
 
               folder = fobj.get("folder","").strip("/")
-              name   = fobj.get("final")
+              name   = fobj.get("original")
 
               outdir = pathlib.Path("work/upload") / folder
               outdir.mkdir(parents=True, exist_ok=True)
 
-              base_cmd = [
+              base = [
                   "aria2c",
                   "--file-allocation=trunc",
                   "--auto-file-renaming=false",
                   "--summary-interval=0",
-                  "-k", "1M",
+                  "-k","1M",
                   "-o", name,
                   "-d", str(outdir)
               ]
 
-              # fast mode
-              fast_cmd = base_cmd + ["-x","8","-s","8"] + url_list
+              fast = base + ["-x","8","-s","8"] + url_list
 
-              print("Downloading (fast):", name)
-              r = subprocess.run(fast_cmd)
+              r = subprocess.run(fast)
 
-              # fallback to single connection if server blocks ranges
               if r.returncode != 0:
-                  print("Retrying single connection:", name)
-                  slow_cmd = base_cmd + ["-x","1","-s","1"] + url_list
-                  subprocess.run(slow_cmd)
+                  slow = base + ["-x","1","-s","1"] + url_list
+                  subprocess.run(slow)
 
           EOF
+
+      # -----------------------------
+      # compression (ONE ARCHIVE PER JOB)
+      # -----------------------------
+      - name: Build archive (if enabled)
+        run: |
+          python3 << 'EOF'
+          import json, os, subprocess, pathlib, shutil
+
+          with open("work/files.json") as f:
+              data = json.load(f)
+
+          comp = data.get("compression")
+
+          if not (comp and comp.get("enabled")):
+              print("Compression disabled")
+              exit(0)
+
+          job = os.environ["JOB_ID"]
+
+          t = comp.get("type","zip")
+
+          src = pathlib.Path("work/upload")
+          out = pathlib.Path("work/archive")
+          out.mkdir(parents=True, exist_ok=True)
+
+          archive = out / f"{job}"
+
+          if t == "zip":
+              subprocess.check_call(["zip","-r",f"{archive}.zip","."], cwd=src)
+              final = archive.with_suffix(".zip")
+
+          elif t == "7z":
+              subprocess.check_call(["7z","a",f"{archive}.7z","."], cwd=src)
+              final = archive.with_suffix(".7z")
+
+          else:
+              ext = t.replace(".","_")
+              name = f"{archive}.{t}"
+              subprocess.check_call(["tar","-cavf",name,"."], cwd=src)
+              final = pathlib.Path(name)
+
+          shutil.rmtree(src)
+          src.mkdir(parents=True, exist_ok=True)
+          shutil.move(str(final), src / final.name)
+
+          EOF
+        env:
+          JOB_ID: ${{ inputs.job_id }}
 
       # -----------------------------
       # uploading
@@ -272,7 +320,6 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SF_SSHKEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-
           ssh-keyscan frs.sourceforge.net >> ~/.ssh/known_hosts
 
           rsync -av --partial \
@@ -280,7 +327,7 @@ jobs:
             ${{ secrets.SF_USER }}@frs.sourceforge.net:/home/frs/project/${{ secrets.SF_PROJECT }}/
 
       # -----------------------------
-      # verifying (stage marker)
+      # verifying
       # -----------------------------
       - name: Stage – verifying
         run: |
@@ -297,7 +344,7 @@ jobs:
           mkdir -p progress/result
 
           python3 << 'EOF'
-          import json, time, os, subprocess, shlex
+          import json, time, os, subprocess, shlex, pathlib
 
           with open("work/start_time.txt") as f:
               start = int(f.read().strip())
@@ -307,42 +354,52 @@ jobs:
 
           files = data["files"]
           compression = data.get("compression")
-
           project = os.environ["SF_PROJECT"]
 
           total = 0
 
-          def remote_size(path):
+          def rsize(path):
               try:
-                  cmd = [
-                      "ssh",
-                      "frs.sourceforge.net",
-                      "stat -c %s " + shlex.quote(path)
-                  ]
-                  out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=20, shell=False)
+                  cmd = ["ssh","frs.sourceforge.net",f"stat -c %s {shlex.quote(path)}"]
+                  out = subprocess.check_output(" ".join(cmd), shell=True, timeout=20)
                   return int(out.decode().strip())
               except:
                   return None
 
-          for fobj in files:
-              folder = fobj.get("folder","").strip("/")
-              name   = fobj.get("final")
+          if compression and compression.get("enabled"):
+              name = files[0]["final"]
+              rpath = f"/home/frs/project/{project}/{name}"
+              s = rsize(rpath)
+              files[:] = [{
+                  "original": name,
+                  "final": name,
+                  "folder": "",
+                  "notes": "",
+                  "status": "ok" if s else "failed",
+                  "size": s or 0
+              }]
+              total = s or 0
 
-              if folder:
-                  rpath = f"/home/frs/project/{project}/{folder}/{name}"
-              else:
-                  rpath = f"/home/frs/project/{project}/{name}"
+          else:
+              for fobj in files:
+                  folder = fobj.get("folder","").strip("/")
+                  name   = fobj.get("final")
 
-              size = remote_size(rpath)
+                  if folder:
+                      rpath = f"/home/frs/project/{project}/{folder}/{name}"
+                  else:
+                      rpath = f"/home/frs/project/{project}/{name}"
 
-              if size is not None:
-                  fobj["size"] = size
-                  fobj["status"] = "ok"
-                  total += size
-              else:
-                  fobj["size"] = 0
-                  if fobj.get("status") != "retry":
-                      fobj["status"] = "failed"
+                  s = rsize(rpath)
+
+                  if s is not None:
+                      fobj["size"] = s
+                      fobj["status"] = "ok"
+                      total += s
+                  else:
+                      fobj["size"] = 0
+                      if fobj.get("status") != "retry":
+                          fobj["status"] = "failed"
 
           now = int(time.time())
 
@@ -361,7 +418,7 @@ jobs:
               "notes": os.environ.get("NOTES","")
           }
 
-          with open("progress/result/%s.json" % os.environ["JOB_ID"],"w") as f:
+          with open(f"progress/result/{os.environ['JOB_ID']}.json","w") as f:
               json.dump(out,f,indent=2)
 
           EOF
@@ -370,9 +427,11 @@ jobs:
           NOTES: ${{ inputs.notes }}
           JOB_ID: ${{ inputs.job_id }}
 
-         
-
-         
+      - name: Commit result
+        run: |
+          git add progress/result/${{ inputs.job_id }}.json
+          git commit -m "result ${{ inputs.job_id }}" || true
+          git push origin progress
 
       # --------------------------------------------------
       # update mirror history
@@ -387,17 +446,11 @@ jobs:
 
           path = "progress/history.json"
 
-          job_id = os.environ["JOB_ID"]
-          run_id = os.environ["RUN_ID"]
-          status = os.environ.get("CONCLUSION","completed")
-
-          now = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
-
           entry = {
-              "job_id": job_id,
-              "run_id": int(run_id),
-              "status": status,
-              "time": now
+              "job_id": os.environ["JOB_ID"],
+              "run_id": int(os.environ["RUN_ID"]),
+              "status": os.environ.get("CONCLUSION","completed"),
+              "time": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
           }
 
           try:
