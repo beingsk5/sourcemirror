@@ -1,0 +1,22 @@
+{
+  "files": [
+    {
+      "url": "https://github.com/beingsk5/Universal-link-mirror/releases/download/sf-2026-02-04/BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "original": "BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "final": "yes.zip",
+      "folder": "wow",
+      "notes": "1",
+      "status": "failed",
+      "size": 0
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_size": 0,
+    "time_taken": 30,
+    "started_at": "2026-02-12T20:14:20Z",
+    "finished_at": "2026-02-12T20:14:50Z",
+    "compression": null
+  },
+  "notes": "2"
+}
