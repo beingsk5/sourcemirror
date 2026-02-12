@@ -101,6 +101,7 @@ jobs:
 
           files = []
 
+          # retry mode (ONLY via /retry API)
           if retry:
               try:
                   arr = json.loads(retry)
@@ -191,7 +192,7 @@ jobs:
           git push origin progress
 
       # -----------------------------
-      # downloading  (FAST – aria2)
+      # downloading (FAST + fallback + multi-source)
       # -----------------------------
       - name: Stage – downloading
         run: |
@@ -206,14 +207,26 @@ jobs:
           mkdir -p work/upload
 
           python3 << 'EOF'
-          import json, pathlib, subprocess
+          import json, pathlib, subprocess, shlex
 
           with open("work/files.json") as f:
               data = json.load(f)
 
           for fobj in data["files"]:
-              url = fobj.get("url")
-              if not url:
+
+              urls = fobj.get("url")
+
+              if not urls:
+                  continue
+
+              # support:
+              # url = "https://..."
+              # or url = ["https://...", "https://mirror..."]
+              if isinstance(urls, str):
+                  url_list = [urls]
+              elif isinstance(urls, list):
+                  url_list = urls
+              else:
                   continue
 
               folder = fobj.get("folder","").strip("/")
@@ -222,23 +235,27 @@ jobs:
               outdir = pathlib.Path("work/upload") / folder
               outdir.mkdir(parents=True, exist_ok=True)
 
-              out = outdir / name
-
-              cmd = [
+              base_cmd = [
                   "aria2c",
-                  "-x", "16",
-                  "-s", "16",
-                  "-k", "1M",
                   "--file-allocation=trunc",
+                  "--auto-file-renaming=false",
+                  "--summary-interval=0",
+                  "-k", "1M",
                   "-o", name,
-                  "-d", str(outdir),
-                  url
+                  "-d", str(outdir)
               ]
 
-              try:
-                  subprocess.run(cmd, check=False)
-              except Exception as e:
-                  print("Download failed:", url, e)
+              # fast mode
+              fast_cmd = base_cmd + ["-x","8","-s","8"] + url_list
+
+              print("Downloading (fast):", name)
+              r = subprocess.run(fast_cmd)
+
+              # fallback to single connection if server blocks ranges
+              if r.returncode != 0:
+                  print("Retrying single connection:", name)
+                  slow_cmd = base_cmd + ["-x","1","-s","1"] + url_list
+                  subprocess.run(slow_cmd)
 
           EOF
 
@@ -246,10 +263,6 @@ jobs:
       # uploading
       # -----------------------------
       - name: Stage – uploading
-        env:
-          SF_USER: ${{ secrets.SF_USER }}
-          SF_PROJECT: ${{ secrets.SF_PROJECT }}
-          SF_SSHKEY: ${{ secrets.SF_SSHKEY }}
         run: |
           echo "uploading" > progress/${{ inputs.job_id }}.txt
           git add progress/${{ inputs.job_id }}.txt
@@ -257,17 +270,17 @@ jobs:
           git push origin progress
 
           mkdir -p ~/.ssh
-          echo "$SF_SSHKEY" > ~/.ssh/id_ed25519
+          echo "${{ secrets.SF_SSHKEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
 
           ssh-keyscan frs.sourceforge.net >> ~/.ssh/known_hosts
 
           rsync -av --partial \
             work/upload/ \
-            ${SF_USER}@frs.sourceforge.net:/home/frs/project/${SF_PROJECT}/
+            ${{ secrets.SF_USER }}@frs.sourceforge.net:/home/frs/project/${{ secrets.SF_PROJECT }}/
 
       # -----------------------------
-      # verifying
+      # verifying (stage marker)
       # -----------------------------
       - name: Stage – verifying
         run: |
@@ -280,10 +293,6 @@ jobs:
       # result + summary (REMOTE SSH VERIFICATION)
       # --------------------------------------------------
       - name: Build result and summary
-        env:
-          SF_PROJECT: ${{ secrets.SF_PROJECT }}
-          NOTES: ${{ inputs.notes }}
-          JOB_ID: ${{ inputs.job_id }}
         run: |
           mkdir -p progress/result
 
@@ -299,6 +308,8 @@ jobs:
           files = data["files"]
           compression = data.get("compression")
 
+          project = os.environ["SF_PROJECT"]
+
           total = 0
 
           def remote_size(path):
@@ -306,9 +317,9 @@ jobs:
                   cmd = [
                       "ssh",
                       "frs.sourceforge.net",
-                      f"stat -c %s {shlex.quote(path)}"
+                      "stat -c %s " + shlex.quote(path)
                   ]
-                  out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=20)
+                  out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, timeout=20, shell=False)
                   return int(out.decode().strip())
               except:
                   return None
@@ -318,9 +329,9 @@ jobs:
               name   = fobj.get("final")
 
               if folder:
-                  rpath = f"/home/frs/project/{os.environ['SF_PROJECT']}/{folder}/{name}"
+                  rpath = f"/home/frs/project/{project}/{folder}/{name}"
               else:
-                  rpath = f"/home/frs/project/{os.environ['SF_PROJECT']}/{name}"
+                  rpath = f"/home/frs/project/{project}/{name}"
 
               size = remote_size(rpath)
 
@@ -354,10 +365,14 @@ jobs:
               json.dump(out,f,indent=2)
 
           EOF
+        env:
+          SF_PROJECT: ${{ secrets.SF_PROJECT }}
+          NOTES: ${{ inputs.notes }}
+          JOB_ID: ${{ inputs.job_id }}
 
-          git add progress/result/${{ inputs.job_id }}.json
-          git commit -m "result ${{ inputs.job_id }}" || true
-          git push origin progress
+         
+
+         
 
       # --------------------------------------------------
       # update mirror history
