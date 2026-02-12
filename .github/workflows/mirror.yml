@@ -259,6 +259,41 @@ jobs:
           EOF
 
       # -----------------------------
+      # apply final filenames before upload (FIX rename bug)
+      # -----------------------------
+      - name: Apply final filenames
+        run: |
+          python3 << 'EOF'
+          import json, pathlib, shutil
+
+          with open("work/files.json") as f:
+              data = json.load(f)
+
+          compression = data.get("compression")
+
+          if compression and compression.get("enabled"):
+              print("Compression enabled – skip per-file rename")
+              exit(0)
+
+          root = pathlib.Path("work/upload")
+
+          for fobj in data["files"]:
+              folder = fobj.get("folder","").strip("/")
+              orig   = fobj.get("original")
+              final  = fobj.get("final")
+
+              src = root / folder / orig
+              dst = root / folder / final
+
+              if src.exists() and src != dst:
+                  dst.parent.mkdir(parents=True, exist_ok=True)
+                  if dst.exists():
+                      dst.unlink()
+                  shutil.move(src, dst)
+
+          EOF
+
+      # -----------------------------
       # compression (ONE ARCHIVE PER JOB)
       # -----------------------------
       - name: Build archive (if enabled)
@@ -294,7 +329,6 @@ jobs:
               final = archive.with_suffix(".7z")
 
           else:
-              ext = t.replace(".","_")
               name = f"{archive}.{t}"
               subprocess.check_call(["tar","-cavf",name,"."], cwd=src)
               final = pathlib.Path(name)
@@ -344,7 +378,7 @@ jobs:
           mkdir -p progress/result
 
           python3 << 'EOF'
-          import json, time, os, subprocess, shlex, pathlib
+          import json, time, os, subprocess
 
           with open("work/start_time.txt") as f:
               start = int(f.read().strip())
@@ -360,8 +394,11 @@ jobs:
 
           def rsize(path):
               try:
-                  cmd = ["ssh","frs.sourceforge.net",f"stat -c %s {shlex.quote(path)}"]
-                  out = subprocess.check_output(" ".join(cmd), shell=True, timeout=20)
+                  out = subprocess.check_output(
+                      ["ssh","frs.sourceforge.net","stat","-c","%s",path],
+                      stderr=subprocess.DEVNULL,
+                      timeout=20
+                  )
                   return int(out.decode().strip())
               except:
                   return None
@@ -370,14 +407,16 @@ jobs:
               name = files[0]["final"]
               rpath = f"/home/frs/project/{project}/{name}"
               s = rsize(rpath)
+
               files[:] = [{
                   "original": name,
                   "final": name,
                   "folder": "",
                   "notes": "",
-                  "status": "ok" if s else "failed",
+                  "status": "ok" if s is not None else "failed",
                   "size": s or 0
               }]
+
               total = s or 0
 
           else:
