@@ -452,7 +452,7 @@ function renderTreeHTML(tree, pathCount, basePath) {
 }
 
 /* =========================================================
-   Start job
+   Start job (unchanged)
    ========================================================= */
 
 btn.onclick = async () => {
@@ -543,7 +543,7 @@ function collectLinksFromUI() {
 }
 
 /* =========================================================
-   Job UI
+   Job UI (unchanged)
    ========================================================= */
 
 function renderFileCard(name) {
@@ -594,7 +594,7 @@ function renderResultFiles(files) {
 }
 
 /* =========================================================
-   Summary UI
+   Summary box for running job (unchanged)
    ========================================================= */
 
 function renderSummaryBox(summary) {
@@ -614,17 +614,17 @@ function renderSummaryBox(summary) {
   const size =
     typeof summary.total_bytes === "number"
       ? formatBytes(summary.total_bytes)
-      : "-";
+      : formatBytes(summary.total_size);
 
   const time =
     typeof summary.time_taken_sec === "number"
       ? formatDuration(summary.time_taken_sec)
-      : "-";
+      : formatDuration(summary.time_taken);
 
   box.innerHTML = `
     <div class="font-semibold text-sm mb-2">Job summary</div>
 
-    <div class="grid grid-cols-2 gap-2">
+    <div class="grid grid-cols-3 gap-2">
       <div>
         <div class="text-zinc-400">Total files</div>
         <div>${escapeHtml(summary.total_files ?? "-")}</div>
@@ -636,16 +636,6 @@ function renderSummaryBox(summary) {
       </div>
 
       <div>
-        <div class="text-zinc-400">Started</div>
-        <div>${escapeHtml(formatTime(summary.started_at))}</div>
-      </div>
-
-      <div>
-        <div class="text-zinc-400">Finished</div>
-        <div>${escapeHtml(formatTime(summary.finished_at))}</div>
-      </div>
-
-      <div>
         <div class="text-zinc-400">Time taken</div>
         <div>${escapeHtml(time)}</div>
       </div>
@@ -654,7 +644,7 @@ function renderSummaryBox(summary) {
 }
 
 /* =========================================================
-   Polling
+   Polling (unchanged)
    ========================================================= */
 
 function startPolling(runId, jobId) {
@@ -699,7 +689,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History  (shows file / folder instead of job id)
+   History (INLINE details + summary)
    ========================================================= */
 
 async function loadHistory() {
@@ -787,44 +777,136 @@ async function loadHistory() {
 
     const row = document.createElement("div");
     row.className =
-      "cursor-pointer p-2 rounded-lg hover:bg-zinc-800 transition flex items-center justify-between gap-2";
+      "p-2 rounded-lg hover:bg-zinc-800 transition";
 
     row.innerHTML = `
-      <div class="min-w-0">
-        <div class="font-medium truncate">
-          ${escapeHtml(displayName)}
+      <div class="cursor-pointer flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <div class="font-medium truncate">
+            ${escapeHtml(displayName)}
+          </div>
+          <div class="text-xs text-zinc-400">
+            ${escapeHtml(h.time || "")}
+          </div>
         </div>
-        <div class="text-xs text-zinc-400">
-          ${escapeHtml(h.time || "")}
-        </div>
-      </div>
 
-      <div class="px-2 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">
-        ${badgeText}
+        <div class="px-2 py-0.5 rounded text-[10px] font-semibold ${badgeClass}">
+          ${badgeText}
+        </div>
       </div>
     `;
 
-    if (h.run_id) {
-      row.onclick = () => openHistoryJob(h.job_id, h.run_id);
-    }
+    row.onclick = () => openHistoryJobInline(h.job_id, row);
 
     list.appendChild(row);
   }
 }
 
-async function openHistoryJob(jobId, runId) {
+async function openHistoryJobInline(jobId, rowEl) {
 
-  const oldSummary = document.getElementById("summaryBox");
-  if (oldSummary) oldSummary.remove();
+  const existing = rowEl.querySelector(".historyDetails");
+  if (existing) {
+    existing.remove();
+    return;
+  }
 
-  currentJobId = jobId;
-  currentRunId = runId;
+  const box = document.createElement("div");
+  box.className =
+    "historyDetails mt-2 ml-2 p-3 rounded-lg border border-zinc-800 bg-zinc-950 text-xs space-y-3";
 
-  jobBox.classList.remove("hidden");
-  jobIdEl.textContent = jobId;
+  box.textContent = "Loading…";
 
-  lastStageIndex = -1;
-  startPolling(runId, jobId);
+  rowEl.appendChild(box);
+
+  try {
+
+    const r = await fetch(
+      "https://raw.githubusercontent.com/beingsk5/sourcemirror/progress/progress/result/" +
+      encodeURIComponent(jobId) +
+      ".json?ts=" + Date.now(),
+      { cache: "no-store" }
+    );
+
+    if (!r.ok) throw 0;
+
+    const data = await r.json();
+
+    box.innerHTML = "";
+
+    if (data.summary) {
+
+      const totalSize =
+        data.summary.total_bytes ??
+        data.summary.total_size ??
+        0;
+
+      const timeTaken =
+        data.summary.time_taken_sec ??
+        data.summary.time_taken ??
+        null;
+
+      const summaryRow = document.createElement("div");
+      summaryRow.className =
+        "flex flex-wrap gap-4 text-zinc-300 border-b border-zinc-800 pb-2";
+
+      summaryRow.innerHTML = `
+        <div>
+          <span class="text-zinc-400">Files:</span>
+          ${escapeHtml(data.summary.total_files ?? "-")}
+        </div>
+        <div>
+          <span class="text-zinc-400">Size:</span>
+          ${escapeHtml(formatBytes(totalSize))}
+        </div>
+        <div>
+          <span class="text-zinc-400">Time:</span>
+          ${escapeHtml(formatDuration(timeTaken))}
+        </div>
+      `;
+
+      box.appendChild(summaryRow);
+    }
+
+    if (!Array.isArray(data.files) || !data.files.length) {
+      const empty = document.createElement("div");
+      empty.textContent = "No files";
+      box.appendChild(empty);
+      return;
+    }
+
+    data.files.forEach(f => {
+
+      const name =
+        (f.folder ? f.folder.replace(/\/+$/,"") + "/" : "") +
+        (f.final || f.original || "");
+
+      const row = document.createElement("div");
+      row.className =
+        "flex items-center justify-between gap-3";
+
+      row.innerHTML = `
+        <div class="truncate">
+          <div class="text-zinc-200">${escapeHtml(name)}</div>
+          <div class="text-zinc-400">
+            ${formatBytes(f.size || 0)}
+          </div>
+        </div>
+
+        <a
+          class="shrink-0 px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+          href="${WORKER_URL}/download?file=${encodeURIComponent(f.final || f.original || "")}"
+          target="_blank"
+        >
+          Download
+        </a>
+      `;
+
+      box.appendChild(row);
+    });
+
+  } catch {
+    box.textContent = "Unable to load job details.";
+  }
 }
 
 /* =========================================================
@@ -904,12 +986,6 @@ function formatDuration(sec) {
   if (h > 0) return `${h}h ${m}m ${s}s`;
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
-}
-
-function formatTime(t) {
-  if (!t) return "-";
-  try { return new Date(t).toLocaleString(); }
-  catch { return "-"; }
 }
 
 /* =========================================================
