@@ -1,0 +1,27 @@
+{
+  "job_id": "0d12c38c-ef00-4a4a-9185-e786c4906be5",
+  "files": [
+    {
+      "url": "https://github.com/beingsk5/Universal-link-mirror/releases/download/sf-2026-02-04/BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "original": "BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "final": "BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "folder": "BiTGApps-arm64-16.0.0-v5.7-NEON-111801",
+      "notes": "",
+      "status": "failed",
+      "size": 0,
+      "download": "https://downloads.sourceforge.net/project/sourcemirror/BiTGApps-arm64-16.0.0-v5.7-NEON-111801/BiTGApps-arm64-16.0.0-v5.7-NEON-111801.zip",
+      "job_id": "0d12c38c-ef00-4a4a-9185-e786c4906be5"
+    }
+  ],
+  "summary": {
+    "total_files": 1,
+    "total_bytes": 0,
+    "time_taken_sec": 38,
+    "total_size": 0,
+    "time_taken": 38,
+    "started_at": "2026-02-13T11:57:25Z",
+    "finished_at": "2026-02-13T11:58:03Z",
+    "compression": null
+  },
+  "notes": ""
+}
