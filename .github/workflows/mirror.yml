@@ -135,7 +135,6 @@ jobs:
                   orig_ext = pathlib.Path(name).suffix
                   orig_stem = pathlib.Path(name).stem
 
-                  # auto folder if empty
                   if not folder:
                       folder = orig_stem
 
@@ -388,15 +387,17 @@ jobs:
 
           files = data["files"]
           compression = data.get("compression")
+
           project = os.environ["SF_PROJECT"]
-          job_id = os.environ["JOB_ID"]
+          job_id  = os.environ["JOB_ID"]
+          sf_user = os.environ["SF_USER"]
 
           total = 0
 
           def rsize(path):
               try:
                   out = subprocess.check_output(
-                      ["ssh","frs.sourceforge.net","stat","-c","%s",path],
+                      ["ssh", f"{sf_user}@frs.sourceforge.net", "stat", "-c", "%s", path],
                       stderr=subprocess.DEVNULL,
                       timeout=20
                   )
@@ -456,15 +457,10 @@ jobs:
 
           summary = {
               "total_files": len(files),
-
-              # required by your UI
               "total_bytes": total,
               "time_taken_sec": now - start,
-
-              # keep legacy keys
               "total_size": total,
               "time_taken": now - start,
-
               "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
               "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
               "compression": compression
@@ -483,6 +479,7 @@ jobs:
           EOF
         env:
           SF_PROJECT: ${{ secrets.SF_PROJECT }}
+          SF_USER: ${{ secrets.SF_USER }}
           NOTES: ${{ inputs.notes }}
           JOB_ID: ${{ inputs.job_id }}
 
