@@ -17,6 +17,79 @@ let currentRunId = null;
 let pollingTimer = null;
 let jobRunning = false;
 
+let lastResultFolder = "";
+
+/* =========================================================
+   Download button beside Start
+   ========================================================= */
+
+const startWrap = btn.parentElement;
+
+const downloadBtn = document.createElement("a");
+downloadBtn.textContent = "Download";
+downloadBtn.target = "_blank";
+downloadBtn.className =
+  "ml-2 px-3 py-1.5 rounded bg-zinc-700/40 text-zinc-400 cursor-not-allowed pointer-events-none text-sm";
+
+startWrap.appendChild(downloadBtn);
+
+function setDownloadEnabled(on) {
+  if (on) {
+    downloadBtn.className =
+      "ml-2 px-3 py-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-sm";
+    downloadBtn.classList.remove("pointer-events-none");
+  } else {
+    downloadBtn.className =
+      "ml-2 px-3 py-1.5 rounded bg-zinc-700/40 text-zinc-400 cursor-not-allowed pointer-events-none text-sm";
+  }
+}
+
+/* =========================================================
+   Failure popup (professional)
+   ========================================================= */
+
+function showRetryPopup() {
+
+  return new Promise(resolve => {
+
+    const overlay = document.createElement("div");
+    overlay.className =
+      "fixed inset-0 bg-black/60 flex items-center justify-center z-50";
+
+    overlay.innerHTML = `
+      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-5 w-[340px] text-sm">
+        <div class="font-semibold text-red-400 mb-2">
+          Mirror job failed
+        </div>
+        <div class="text-zinc-300 mb-4">
+          The mirror job did not complete successfully.<br>
+          Do you want to start it again?
+        </div>
+        <div class="flex justify-end gap-2">
+          <button class="cancelBtn px-3 py-1.5 rounded bg-zinc-700/40 text-zinc-300">
+            Cancel
+          </button>
+          <button class="retryBtn px-3 py-1.5 rounded bg-yellow-600/20 text-yellow-400">
+            Start again
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    overlay.querySelector(".cancelBtn").onclick = () => {
+      overlay.remove();
+      resolve(false);
+    };
+
+    overlay.querySelector(".retryBtn").onclick = () => {
+      overlay.remove();
+      resolve(true);
+    };
+  });
+}
+
 /* =========================================================
    Compression helpers
    ========================================================= */
@@ -466,6 +539,8 @@ btn.onclick = async () => {
     return;
   }
 
+  setDownloadEnabled(false);
+
   const compression = getCompressionState();
 
   const jobId = crypto.randomUUID();
@@ -573,13 +648,21 @@ function renderFileCard(name) {
   return div;
 }
 
+/* =========================================================
+   Result UI (NO retry button)
+   ========================================================= */
+
 function renderResultFiles(files) {
 
   filesArea.innerHTML = "";
+  lastResultFolder = "";
 
   files.forEach(f => {
 
     const name = f.final || f.original || "";
+
+    if (!lastResultFolder && f.folder)
+      lastResultFolder = f.folder;
 
     const row = document.createElement("div");
     row.className =
@@ -597,46 +680,21 @@ function renderResultFiles(files) {
           ${formatBytes(f.size || 0)}
         </div>
       </div>
-
-      <div class="flex gap-2 shrink-0">
-        <a
-          class="px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
-          target="_blank"
-          href="${WORKER_URL}/download?job_id=${encodeURIComponent(currentJobId)}&file=${encodeURIComponent(name)}"
-        >Download</a>
-
-        <button
-          class="retryBtn px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30"
-        >Retry</button>
-      </div>
     `;
-
-    row.querySelector(".retryBtn").onclick = () => {
-      triggerRetry(currentJobId, [name]);
-    };
 
     filesArea.appendChild(row);
   });
-}
 
-/* =========================================================
-   Retry helper
-   ========================================================= */
+  if (lastResultFolder) {
+    downloadBtn.href =
+      WORKER_URL +
+      "/download?job_id=" +
+      encodeURIComponent(currentJobId) +
+      "&folder=" +
+      encodeURIComponent(lastResultFolder);
+  }
 
-async function triggerRetry(jobId, files) {
-
-  if (!jobId || !files || !files.length) return;
-
-  await fetch(WORKER_URL + "/retry", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      job_id: jobId,
-      files
-    })
-  });
-
-  alert("Retry requested.");
+  setDownloadEnabled(true);
 }
 
 /* =========================================================
@@ -734,13 +792,22 @@ function startPolling(runId, jobId) {
         renderSummaryBox(data.summary);
 
       loadHistory();
+
+      const failed =
+        String(data.conclusion || "").toLowerCase().includes("fail") ||
+        String(data.conclusion || "").toLowerCase().includes("error");
+
+      if (failed) {
+        const again = await showRetryPopup();
+        if (again) btn.click();
+      }
     }
 
   }, 1000);
 }
 
 /* =========================================================
-   History (INLINE details + summary)
+   History (INLINE details + notes + download)
    ========================================================= */
 
 async function loadHistory() {
@@ -884,17 +951,24 @@ async function openHistoryJobInline(jobId, rowEl) {
 
     box.innerHTML = "";
 
+    if (data.notes) {
+      const jobNote = document.createElement("div");
+      jobNote.className =
+        "text-zinc-400 border-b border-zinc-800 pb-2";
+      jobNote.innerHTML =
+        `<span class="text-zinc-500">Job note:</span> ${escapeHtml(data.notes)}`;
+      box.appendChild(jobNote);
+    }
+
     if (data.summary) {
 
       const totalSize =
         data.summary.total_bytes ??
-        data.summary.total_size ??
-        0;
+        data.summary.total_size ?? 0;
 
       const timeTaken =
         data.summary.time_taken_sec ??
-        data.summary.time_taken ??
-        null;
+        data.summary.time_taken ?? null;
 
       const summaryRow = document.createElement("div");
       summaryRow.className =
@@ -938,31 +1012,26 @@ async function openHistoryJobInline(jobId, rowEl) {
       row.innerHTML = `
         <div class="truncate">
           <div class="text-zinc-200">${escapeHtml(name)}</div>
+
+          ${
+            f.notes
+              ? `<div class="text-zinc-500">Note: ${escapeHtml(f.notes)}</div>`
+              : ""
+          }
+
           <div class="text-zinc-400">
             ${formatBytes(f.size || 0)}
           </div>
         </div>
 
-        <div class="flex gap-2 shrink-0">
-          <a
-            class="px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
-            target="_blank"
-            href="${WORKER_URL}/download?job_id=${encodeURIComponent(jobId)}&file=${encodeURIComponent(f.final || f.original || "")}"
-          >
-            Download
-          </a>
-
-          <button
-            class="px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30"
-          >
-            Retry
-          </button>
-        </div>
+        <a
+          class="shrink-0 px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+          target="_blank"
+          href="${WORKER_URL}/download?job_id=${encodeURIComponent(jobId)}&file=${encodeURIComponent(f.final || f.original || "")}"
+        >
+          Download
+        </a>
       `;
-
-      row.querySelector("button").onclick = () => {
-        triggerRetry(jobId, [f.final || f.original || ""]);
-      };
 
       box.appendChild(row);
     });
@@ -1058,5 +1127,6 @@ function formatDuration(sec) {
 document.addEventListener("DOMContentLoaded", () => {
   const note = document.getElementById("compressionNote");
   if (note) note.classList.toggle("hidden", !getCompressionState().enabled);
+  setDownloadEnabled(false);
   loadHistory();
 });
