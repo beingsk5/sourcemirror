@@ -17,8 +17,6 @@ let currentRunId = null;
 let pollingTimer = null;
 let jobRunning = false;
 
-let lastResultFolder = "";
-
 /* =========================================================
    Download button beside Start
    ========================================================= */
@@ -33,19 +31,22 @@ downloadBtn.className =
 
 startWrap.appendChild(downloadBtn);
 
-function setDownloadEnabled(on) {
-  if (on) {
+function setDownloadEnabled(on, url = "") {
+
+  if (on && url) {
+    downloadBtn.href = url;
     downloadBtn.className =
       "ml-2 px-3 py-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-sm";
     downloadBtn.classList.remove("pointer-events-none");
   } else {
+    downloadBtn.removeAttribute("href");
     downloadBtn.className =
       "ml-2 px-3 py-1.5 rounded bg-zinc-700/40 text-zinc-400 cursor-not-allowed pointer-events-none text-sm";
   }
 }
 
 /* =========================================================
-   Failure popup (professional)
+   Failure popup
    ========================================================= */
 
 function showRetryPopup() {
@@ -649,20 +650,26 @@ function renderFileCard(name) {
 }
 
 /* =========================================================
-   Result UI (NO retry button)
+   Result UI
    ========================================================= */
 
 function renderResultFiles(files) {
 
   filesArea.innerHTML = "";
-  lastResultFolder = "";
+
+  let firstDownload = "";
 
   files.forEach(f => {
 
     const name = f.final || f.original || "";
 
-    if (!lastResultFolder && f.folder)
-      lastResultFolder = f.folder;
+    if (!firstDownload && f.download && f.status === "ok")
+      firstDownload = f.download;
+
+    const sizeVal =
+      typeof f.size === "number"
+        ? f.size
+        : Number(f.size);
 
     const row = document.createElement("div");
     row.className =
@@ -677,7 +684,7 @@ function renderResultFiles(files) {
           ${escapeHtml(f.status || "")}
         </div>
         <div class="text-zinc-400">
-          ${formatBytes(f.size || 0)}
+          ${formatBytes(sizeVal)}
         </div>
       </div>
     `;
@@ -685,20 +692,11 @@ function renderResultFiles(files) {
     filesArea.appendChild(row);
   });
 
-  if (lastResultFolder) {
-    downloadBtn.href =
-      WORKER_URL +
-      "/download?job_id=" +
-      encodeURIComponent(currentJobId) +
-      "&folder=" +
-      encodeURIComponent(lastResultFolder);
-  }
-
-  setDownloadEnabled(true);
+  setDownloadEnabled(!!firstDownload, firstDownload);
 }
 
 /* =========================================================
-   Summary box for running job
+   Summary box
    ========================================================= */
 
 function renderSummaryBox(summary) {
@@ -718,12 +716,12 @@ function renderSummaryBox(summary) {
   const size =
     typeof summary.total_bytes === "number"
       ? formatBytes(summary.total_bytes)
-      : formatBytes(summary.total_size);
+      : formatBytes(Number(summary.total_size));
 
   const time =
     typeof summary.time_taken_sec === "number"
       ? formatDuration(summary.time_taken_sec)
-      : formatDuration(summary.time_taken);
+      : formatDuration(Number(summary.time_taken));
 
   box.innerHTML = `
     <div class="font-semibold text-sm mb-2">Job summary</div>
@@ -807,7 +805,7 @@ function startPolling(runId, jobId) {
 }
 
 /* =========================================================
-   History (INLINE details + notes + download)
+   History
    ========================================================= */
 
 async function loadHistory() {
@@ -981,11 +979,11 @@ async function openHistoryJobInline(jobId, rowEl) {
         </div>
         <div>
           <span class="text-zinc-400">Size:</span>
-          ${escapeHtml(formatBytes(totalSize))}
+          ${escapeHtml(formatBytes(Number(totalSize)))}
         </div>
         <div>
           <span class="text-zinc-400">Time:</span>
-          ${escapeHtml(formatDuration(timeTaken))}
+          ${escapeHtml(formatDuration(Number(timeTaken)))}
         </div>
       `;
 
@@ -1005,6 +1003,11 @@ async function openHistoryJobInline(jobId, rowEl) {
         (f.folder ? f.folder.replace(/\/+$/,"") + "/" : "") +
         (f.final || f.original || "");
 
+      const sizeVal =
+        typeof f.size === "number"
+          ? f.size
+          : Number(f.size);
+
       const row = document.createElement("div");
       row.className =
         "flex items-center justify-between gap-3";
@@ -1020,14 +1023,15 @@ async function openHistoryJobInline(jobId, rowEl) {
           }
 
           <div class="text-zinc-400">
-            ${formatBytes(f.size || 0)}
+            ${formatBytes(sizeVal)}
           </div>
         </div>
 
         <a
           class="shrink-0 px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
           target="_blank"
-          href="${WORKER_URL}/download?job_id=${encodeURIComponent(jobId)}&file=${encodeURIComponent(f.final || f.original || "")}"
+          href="${escapeHtml(f.download || "#")}"
+          ${f.download && f.status === "ok" ? "" : "style='pointer-events:none;opacity:.4'"}
         >
           Download
         </a>
@@ -1102,7 +1106,7 @@ function escapeHtml(s) {
 }
 
 function formatBytes(bytes) {
-  if (typeof bytes !== "number") return "-";
+  if (typeof bytes !== "number" || isNaN(bytes)) return "-";
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B","KB","MB","GB","TB"];
@@ -1111,7 +1115,7 @@ function formatBytes(bytes) {
 }
 
 function formatDuration(sec) {
-  if (typeof sec !== "number") return "-";
+  if (typeof sec !== "number" || isNaN(sec)) return "-";
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
