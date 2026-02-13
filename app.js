@@ -15,6 +15,7 @@ let lastStageIndex = -1;
 let currentJobId = null;
 let currentRunId = null;
 let pollingTimer = null;
+let jobRunning = false;
 
 /* =========================================================
    Compression helpers
@@ -452,10 +453,12 @@ function renderTreeHTML(tree, pathCount, basePath) {
 }
 
 /* =========================================================
-   Start job (unchanged)
+   Start job
    ========================================================= */
 
 btn.onclick = async () => {
+
+  if (jobRunning) return;
 
   const links = collectLinksFromUI();
   if (!links.length) {
@@ -473,6 +476,7 @@ btn.onclick = async () => {
 
   btn.disabled = true;
   btn.textContent = "Starting…";
+  jobRunning = true;
 
   const r = await fetch(WORKER_URL, {
     method: "POST",
@@ -491,6 +495,7 @@ btn.onclick = async () => {
     alert("Failed to start mirroring job.");
     btn.disabled = false;
     btn.textContent = "Mirror to SourceForge";
+    jobRunning = false;
     return;
   }
 
@@ -543,7 +548,7 @@ function collectLinksFromUI() {
 }
 
 /* =========================================================
-   Job UI (unchanged)
+   Job UI
    ========================================================= */
 
 function renderFileCard(name) {
@@ -574,27 +579,68 @@ function renderResultFiles(files) {
 
   files.forEach(f => {
 
+    const name = f.final || f.original || "";
+
     const row = document.createElement("div");
     row.className =
       "border border-zinc-800 rounded-xl p-3 text-xs flex items-center justify-between gap-3 bg-zinc-950/40";
 
     row.innerHTML = `
-      <div>
-        <div class="font-medium">
-          ${escapeHtml(f.final || f.original || "")}
+      <div class="min-w-0">
+        <div class="font-medium truncate">
+          ${escapeHtml(name)}
         </div>
         <div class="${f.status === "failed" ? "text-red-400" : "text-emerald-400"}">
           ${escapeHtml(f.status || "")}
         </div>
+        <div class="text-zinc-400">
+          ${formatBytes(f.size || 0)}
+        </div>
+      </div>
+
+      <div class="flex gap-2 shrink-0">
+        <a
+          class="px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+          target="_blank"
+          href="${WORKER_URL}/download?job_id=${encodeURIComponent(currentJobId)}&file=${encodeURIComponent(name)}"
+        >Download</a>
+
+        <button
+          class="retryBtn px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30"
+        >Retry</button>
       </div>
     `;
+
+    row.querySelector(".retryBtn").onclick = () => {
+      triggerRetry(currentJobId, [name]);
+    };
 
     filesArea.appendChild(row);
   });
 }
 
 /* =========================================================
-   Summary box for running job (unchanged)
+   Retry helper
+   ========================================================= */
+
+async function triggerRetry(jobId, files) {
+
+  if (!jobId || !files || !files.length) return;
+
+  await fetch(WORKER_URL + "/retry", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      job_id: jobId,
+      files
+    })
+  });
+
+  alert("Retry requested.");
+}
+
+/* =========================================================
+   Summary box for running job
    ========================================================= */
 
 function renderSummaryBox(summary) {
@@ -644,12 +690,15 @@ function renderSummaryBox(summary) {
 }
 
 /* =========================================================
-   Polling (unchanged)
+   Polling
    ========================================================= */
 
 function startPolling(runId, jobId) {
 
   if (pollingTimer) clearInterval(pollingTimer);
+
+  btn.textContent = "Running…";
+  btn.disabled = true;
 
   pollingTimer = setInterval(async () => {
 
@@ -673,6 +722,8 @@ function startPolling(runId, jobId) {
     if (data.status === "completed") {
 
       clearInterval(pollingTimer);
+
+      jobRunning = false;
       btn.disabled = false;
       btn.textContent = "Mirror to SourceForge";
 
@@ -892,14 +943,26 @@ async function openHistoryJobInline(jobId, rowEl) {
           </div>
         </div>
 
-        <a
-          class="shrink-0 px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
-          href="${WORKER_URL}/download?file=${encodeURIComponent(f.final || f.original || "")}"
-          target="_blank"
-        >
-          Download
-        </a>
+        <div class="flex gap-2 shrink-0">
+          <a
+            class="px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
+            target="_blank"
+            href="${WORKER_URL}/download?job_id=${encodeURIComponent(jobId)}&file=${encodeURIComponent(f.final || f.original || "")}"
+          >
+            Download
+          </a>
+
+          <button
+            class="px-2 py-1 rounded bg-yellow-600/20 text-yellow-400 hover:bg-yellow-600/30"
+          >
+            Retry
+          </button>
+        </div>
       `;
+
+      row.querySelector("button").onclick = () => {
+        triggerRetry(jobId, [f.final || f.original || ""]);
+      };
 
       box.appendChild(row);
     });
