@@ -33,7 +33,7 @@ startWrap.appendChild(downloadBtn);
 
 function setDownloadEnabled(on, url = "") {
 
-  if (on && url) {
+  if (on && url && typeof url === "string" && url.startsWith("http")) {
     downloadBtn.href = url;
     downloadBtn.className =
       "ml-2 px-3 py-1.5 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-sm";
@@ -650,7 +650,7 @@ function renderFileCard(name) {
 }
 
 /* =========================================================
-   Result UI
+   Result UI  (FIXED)
    ========================================================= */
 
 function renderResultFiles(files) {
@@ -663,13 +663,20 @@ function renderResultFiles(files) {
 
     const name = f.final || f.original || "";
 
-    if (!firstDownload && f.download && f.status === "ok")
+    if (!firstDownload &&
+        typeof f.download === "string" &&
+        f.download.startsWith("http")) {
       firstDownload = f.download;
+    }
 
     const sizeVal =
       typeof f.size === "number"
         ? f.size
         : Number(f.size);
+
+    const failed =
+      String(f.status || "").toLowerCase().includes("fail") ||
+      String(f.status || "").toLowerCase().includes("error");
 
     const row = document.createElement("div");
     row.className =
@@ -680,7 +687,7 @@ function renderResultFiles(files) {
         <div class="font-medium truncate">
           ${escapeHtml(name)}
         </div>
-        <div class="${f.status === "failed" ? "text-red-400" : "text-emerald-400"}">
+        <div class="${failed ? "text-red-400" : "text-emerald-400"}">
           ${escapeHtml(f.status || "")}
         </div>
         <div class="text-zinc-400">
@@ -1008,6 +1015,10 @@ async function openHistoryJobInline(jobId, rowEl) {
           ? f.size
           : Number(f.size);
 
+      const validDownload =
+        typeof f.download === "string" &&
+        f.download.startsWith("http");
+
       const row = document.createElement("div");
       row.className =
         "flex items-center justify-between gap-3";
@@ -1030,8 +1041,8 @@ async function openHistoryJobInline(jobId, rowEl) {
         <a
           class="shrink-0 px-2 py-1 rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
           target="_blank"
-          href="${escapeHtml(f.download || "#")}"
-          ${f.download && f.status === "ok" ? "" : "style='pointer-events:none;opacity:.4'"}
+          ${validDownload ? `href="${f.download}"` : ""}
+          ${validDownload ? "" : "style='pointer-events:none;opacity:.4'"}
         >
           Download
         </a>
