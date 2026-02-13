@@ -66,7 +66,7 @@ jobs:
           date -u +%s > work/start_time.txt
 
       # --------------------------------------------------
-      # build working file list  (FIX rename/ext bug)
+      # build working file list  (FIX rename/ext + auto folder)
       # --------------------------------------------------
       - name: Build job file list
         run: |
@@ -128,11 +128,16 @@ jobs:
                   name = url.split("/")[-1] or "file"
 
                   base   = x.get("rename_base") or ""
-                  folder = x.get("folder") or ""
+                  folder = (x.get("folder") or "").strip()
                   notes  = x.get("notes") or ""
                   rename = x.get("rename") or ""
 
                   orig_ext = pathlib.Path(name).suffix
+                  orig_stem = pathlib.Path(name).stem
+
+                  # auto folder if empty
+                  if not folder:
+                      folder = orig_stem
 
                   if compression and compression.get("enabled"):
                       final = os.environ["JOB_ID"] + "." + archive_ext(compression.get("type","zip"))
@@ -164,12 +169,13 @@ jobs:
                       continue
 
                   name = u.split("/")[-1] or "file"
+                  stem = pathlib.Path(name).stem
 
                   files.append({
                       "url": u,
                       "original": name,
                       "final": name,
-                      "folder": "",
+                      "folder": stem,
                       "notes": "",
                       "status": "pending"
                   })
@@ -200,7 +206,7 @@ jobs:
           git push origin progress
 
       # -----------------------------
-      # downloading  (FAST aria2 + fallback + multi source)
+      # downloading
       # -----------------------------
       - name: Stage – downloading
         run: |
@@ -259,7 +265,7 @@ jobs:
           EOF
 
       # -----------------------------
-      # apply final filenames before upload (FIX rename bug)
+      # apply final filenames
       # -----------------------------
       - name: Apply final filenames
         run: |
@@ -272,18 +278,14 @@ jobs:
           compression = data.get("compression")
 
           if compression and compression.get("enabled"):
-              print("Compression enabled – skip per-file rename")
               exit(0)
 
           root = pathlib.Path("work/upload")
 
           for fobj in data["files"]:
               folder = fobj.get("folder","").strip("/")
-              orig   = fobj.get("original")
-              final  = fobj.get("final")
-
-              src = root / folder / orig
-              dst = root / folder / final
+              src = root / folder / fobj["original"]
+              dst = root / folder / fobj["final"]
 
               if src.exists() and src != dst:
                   dst.parent.mkdir(parents=True, exist_ok=True)
@@ -307,18 +309,16 @@ jobs:
           comp = data.get("compression")
 
           if not (comp and comp.get("enabled")):
-              print("Compression disabled")
               exit(0)
 
           job = os.environ["JOB_ID"]
-
           t = comp.get("type","zip")
 
           src = pathlib.Path("work/upload")
           out = pathlib.Path("work/archive")
           out.mkdir(parents=True, exist_ok=True)
 
-          archive = out / f"{job}"
+          archive = out / job
 
           if t == "zip":
               subprocess.check_call(["zip","-r",f"{archive}.zip","."], cwd=src)
@@ -371,7 +371,7 @@ jobs:
           git push origin progress
 
       # --------------------------------------------------
-      # result + summary (REMOTE SSH VERIFICATION)
+      # result + summary (REMOTE SSH VERIFICATION + UI FIELDS)
       # --------------------------------------------------
       - name: Build result and summary
         run: |
@@ -389,6 +389,7 @@ jobs:
           files = data["files"]
           compression = data.get("compression")
           project = os.environ["SF_PROJECT"]
+          job_id = os.environ["JOB_ID"]
 
           total = 0
 
@@ -403,18 +404,26 @@ jobs:
               except:
                   return None
 
+          def dl(folder, name):
+              if folder:
+                  return f"https://downloads.sourceforge.net/project/{project}/{folder}/{name}"
+              return f"https://downloads.sourceforge.net/project/{project}/{name}"
+
           if compression and compression.get("enabled"):
-              name = files[0]["final"]
+
+              name = os.listdir("work/upload")[0]
               rpath = f"/home/frs/project/{project}/{name}"
               s = rsize(rpath)
 
               files[:] = [{
+                  "job_id": job_id,
                   "original": name,
                   "final": name,
                   "folder": "",
                   "notes": "",
                   "status": "ok" if s is not None else "failed",
-                  "size": s or 0
+                  "size": s or 0,
+                  "download": dl("", name)
               }]
 
               total = s or 0
@@ -440,24 +449,35 @@ jobs:
                       if fobj.get("status") != "retry":
                           fobj["status"] = "failed"
 
+                  fobj["download"] = dl(folder, name)
+                  fobj["job_id"] = job_id
+
           now = int(time.time())
 
           summary = {
               "total_files": len(files),
+
+              # required by your UI
+              "total_bytes": total,
+              "time_taken_sec": now - start,
+
+              # keep legacy keys
               "total_size": total,
               "time_taken": now - start,
+
               "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(start)),
               "finished_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
               "compression": compression
           }
 
           out = {
+              "job_id": job_id,
               "files": files,
               "summary": summary,
               "notes": os.environ.get("NOTES","")
           }
 
-          with open(f"progress/result/{os.environ['JOB_ID']}.json","w") as f:
+          with open(f"progress/result/{job_id}.json","w") as f:
               json.dump(out,f,indent=2)
 
           EOF
